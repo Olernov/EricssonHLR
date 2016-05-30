@@ -24,9 +24,15 @@
     <ClCompile Include="ConfigContainer.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="LogWriter.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="ConfigContainer.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="LogWriter.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

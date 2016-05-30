@@ -16,7 +16,7 @@ bool Config::ReadConfigString(const string& configString, string& errDescription
 			option_name = configString.substr(pos, delim_pos - pos);
 			transform(option_name.begin(), option_name.end(), option_name.begin(), ::toupper);
 			size_t value_pos = configString.find_first_not_of(" \t=", delim_pos);
-			string option_value;
+			string option_value;  
 			if (value_pos != string::npos) {
 				size_t value_end = configString.find_first_of(" \t;", value_pos);
 				if (value_end != string::npos) {
