@@ -1,0 +1,1 @@
+#define MAIN_THREAD_NUM						0
