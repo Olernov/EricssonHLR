@@ -1,4 +1,5 @@
 #include "ConfigContainer.h"
+#include "Common.h"
 
 bool Config::ReadConfigString(const string& configString, string& errDescription)
 {
@@ -85,7 +86,7 @@ bool Config::ReadConfigString(const string& configString, string& errDescription
 	
 	if (m_numThreads == 0) // not initialized
 		m_numThreads = 1;
-	else if (m_numThreads > 8)
+	else if (m_numThreads > MAX_THREADS)
 		errDescription = "Invalid parameter " + to_string(m_numThreads) + 
 			" passed for NUM_THREADS. Valid values from 1 to 8.";
 

@@ -14,6 +14,7 @@
 #define ERROR_INIT_PARAMS					-1
 #define INIT_FAIL							-2
 #define OPERATION_SUCCESS					0
+#define TRY_LATER							-33333
 
 
 Config config;
@@ -70,7 +71,15 @@ __declspec (dllexport) int __stdcall InitService(char* szInitParams, char* szRes
 
 __declspec (dllexport) int __stdcall ExecuteCommand(char **pParam, int nParamCount, char* szResult)
 {
-	return 0;
+	unsigned int connIndex;
+	if (connectionPool.TryAcquire(connIndex, pParam[0])) {
+		logWriter.Write("task sent to " + to_string(connIndex));
+		return OPERATION_SUCCESS;
+	}
+	else {
+		logWriter.Write("no free connection, try later");
+		return TRY_LATER;
+	}
 }
 
 
@@ -107,11 +116,21 @@ BOOL WINAPI DllMain(HINSTANCE hinstDLL,  DWORD fdwReason,  LPVOID lpvReserved)
 int main(int argc, char* argv[])
 {
 	char initResult[1024];
+	char execResult[1024];
 	int initRes = InitService(argv[1], initResult);
+	if (initRes == OPERATION_SUCCESS) {
+		for (int i = 0; i < 100; i++) {
+			char* task = new char[50];
+			char result[50];
+			sprintf_s(task, 50, "EXECUTE HLR COMMAND %d", i);
+			ExecuteCommand((char**)&task, 1, result);
+			//this_thread::sleep_for(std::chrono::seconds(rand() % 2));
+		}
+	}
 	DeInitService(initResult);
 
 	char dummy;
-
+	cout << ">";
 	std::cin >> dummy;
 	return OPERATION_SUCCESS;
 }

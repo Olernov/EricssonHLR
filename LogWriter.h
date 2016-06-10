@@ -40,7 +40,7 @@ public:
 	bool Stop();
 private:
 	static const int queueSize = 128;
-	static const int sleepWhenQueueEmpty = 3;
+	static const int sleepWhenQueueEmpty = 1;
 	string m_logPath;
 	boost::lockfree::queue<LogMessage*> messageQueue;
 	atomic<bool> m_stopFlag;

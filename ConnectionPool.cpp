@@ -20,7 +20,8 @@ using namespace std;
 //using boost::asio::ip::tcp;
 extern LogWriter logWriter;
 
-ConnectionPool::ConnectionPool()
+ConnectionPool::ConnectionPool() :
+	m_stopFlag(false)
 {
 }
 
@@ -47,14 +48,21 @@ bool ConnectionPool::Initialize(const Config& config, string& errDescription)
 			return false;
 		}
 		logWriter.Write("Connected to HLR successfully.", index);
-		if (!LoginToHLR(index, errDescription)) {
+		/*if (!LoginToHLR(index, errDescription)) {
 			return false;
-		}
+		}*/
+		m_busy.push_back(atomic<bool>(false));
+		//m_condVars.push_back(condition_variable());
 		//logWriter.Write("LoginToHLR: logged in successfully.", index);
 	}
-	/*for (unsigned int i = 0; i < config.m_numThreads; ++i) {
+	//m_mutexes.resize(config.m_numThreads);
+	//m_condVars.resize(config.m_numThreads);
+	m_ptasks.resize(config.m_numThreads);
+	m_presults.resize(config.m_numThreads);
+
+	for (unsigned int i = 0; i < config.m_numThreads; ++i) {
 		m_threads.push_back(thread(&ConnectionPool::WorkerThread, this, i));
-	}*/
+	}
 	return true;
 }
 
@@ -314,29 +322,65 @@ do_eat_chars:
 
 void ConnectionPool::WorkerThread(unsigned int index)
 {
-	//logWriter.Write(LogMessage(time_t(), index, "Connection thread started"));
-	//ip::tcp::socket socket(m_IO_service);
-	//try {
-	//	ip::tcp::resolver resolver(m_IO_service);
-	//	ip::tcp::resolver::query query(m_config.m_hostName, to_string(m_config.m_port));
-	//	ip::tcp::resolver::iterator iter = resolver.resolve(query);
-	//	ip::tcp::endpoint ep = *iter;
-	//	socket.connect(ep);
-	//}
-	//catch(const boost::system::system_error& e) {
-	//	string errDescription = e.code().message();
-	//	//	return false;
-	//}
-	//this_thread::sleep_for(chrono::seconds(3));
-	//socket.close();
+	while (!m_stopFlag) {
+		unique_lock<mutex> locker(m_mutexes[index]);
+		while (!m_busy[index] && !m_stopFlag)
+			m_condVars[index].wait(locker);
+		if (!m_stopFlag) {
+			// simulate work
+			logWriter.Write(string("Got task: ") + m_ptasks[index], index);
+			this_thread::sleep_for(std::chrono::seconds(1 + rand() % 5));
+
+			//m_presults[index] = new string("SUCCESS");
+			logWriter.Write(string("Finished task ") + m_ptasks[index], index);
+			m_busy[index] = false;
+			m_condVars[index].notify_one();
+		}
+	}
 }
 
+bool ConnectionPool::TryAcquire(unsigned int& index, char* ptask)
+{
+	const int maxSecondsToAcquire = 2;
+	int cycleCounter = 0;
+	
+	time_t startTime;
+	time(&startTime);
+	while (true) {
+		for (int i = 0; i < m_config.m_numThreads; ++i) {
+			bool oldValue = m_busy[i];
+			if (!oldValue) {
+				if (m_busy[i].compare_exchange_weak(oldValue, true)) {
+					m_ptasks[i] = ptask;
+					m_condVars[i].notify_one();
+					index = i;
+					unique_lock<mutex> locker(m_mutexes[index]);
+					m_condVars[index].wait(locker);
+					return true;
+				}
+			}
+		}
+		++cycleCounter;
+		if (cycleCounter > 1000) {
+			time_t now;
+			time(&now);
+			if (now - startTime > maxSecondsToAcquire)
+				return false;
+			cycleCounter = 0;
+		}
+	}
+	
+}
 
 bool ConnectionPool::Close()
 {
 	for(auto& socket : m_sockets) {
 		shutdown(socket, SD_BOTH);
 		closesocket(socket);
+	}
+	m_stopFlag = true;
+	for (int i = 0; i < m_config.m_numThreads; ++i) {
+		m_condVars[i].notify_one();
 	}
 	for(auto& thr : m_threads) {
 		if (thr.joinable())

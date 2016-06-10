@@ -1,5 +1,8 @@
 #pragma once
 #include <vector>
+#include <atomic>
+#include <mutex>
+#include <condition_variable>
 #include "Common.h"
 
 using namespace std;
@@ -16,13 +19,21 @@ public:
 	ConnectionPool();
 	~ConnectionPool();
 	bool Initialize(const Config& config, string& errDescription);
+	bool TryAcquire(unsigned int& index, char* ptask);
 	bool Close();
+	
 private:
 	static const int receiveBufferSize = 65000;
 	static const int sendBufferSize = 1024;
 	vector<int> m_sockets;
 	vector<thread> m_threads;
+	vector<atomic_bool> m_busy;
+	condition_variable m_condVars[MAX_THREADS];
+	mutex m_mutexes[MAX_THREADS];
+	vector<char*> m_ptasks;
+	vector<string*> m_presults;
 	Config m_config;
+	bool m_stopFlag;
 
 	enum {
 		TELNET_SE = 240,	/* End of subnegotiation parameters. */

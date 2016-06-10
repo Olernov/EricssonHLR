@@ -9,7 +9,11 @@ void LogWriter::WriteThreadFunction()
 		while (!messageQueue.empty()) {
 			LogMessage* pmessage; 
 			messageQueue.pop(pmessage);
-			cout << pmessage->m_message.c_str() << endl;
+			tm messageTime;
+			localtime_s(&messageTime, &pmessage->m_time);
+			char timeBuf[30];
+		    strftime(timeBuf, 29 , "%H:%M:%S", &messageTime);
+			cout << timeBuf << "  |  " << pmessage->m_threadNum << "  |  " << pmessage->m_message.c_str() << endl;
 			delete pmessage;
 		}
 		if (m_stopFlag && messageQueue.empty())
@@ -46,7 +50,9 @@ bool LogWriter::Write(const LogMessage& message)
 
 bool LogWriter::Write(string message, short threadIndex)
 {
-	LogMessage* pnewMessage = new LogMessage(time_t(), threadIndex, message);
+	time_t now;
+	time(&now);
+	LogMessage* pnewMessage = new LogMessage(now, threadIndex, message);
 	if (!messageQueue.push(pnewMessage))
 		throw LogWriterException("Unable to add message to log queue");
 	return true;
