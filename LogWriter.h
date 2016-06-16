@@ -2,6 +2,9 @@
 #include <queue>
 #include <thread>
 #include <time.h>
+#include <mutex>
+#include <exception>
+#include <stdexcept>
 #include <boost/lockfree/queue.hpp>
 #include "Common.h"
 
@@ -36,14 +39,18 @@ public:
 	bool Initialize(const string& logPath, string& errDescription);
 	bool Write(string message, short threadIndex = MAIN_THREAD_NUM);
 	bool Write(const LogMessage&);
-	
+	void operator<<(const string&);
+	inline exception_ptr GetException() { return m_excPointer; }
+	void ClearException();
 	bool Stop();
 private:
 	static const int queueSize = 128;
 	static const int sleepWhenQueueEmpty = 1;
+	exception_ptr m_excPointer;
 	string m_logPath;
 	boost::lockfree::queue<LogMessage*> messageQueue;
 	atomic<bool> m_stopFlag;
 	thread m_writeThread;
+	mutex m_exceptionMutex;
 	void WriteThreadFunction();
 };

@@ -43,23 +43,16 @@ bool ConnectionPool::Initialize(const Config& config, string& errDescription)
 	}
 
 	for (unsigned int index = 0; index < config.m_numThreads; ++index) {
-		m_sockets.push_back(INVALID_SOCKET);
+		m_sockets[index] = INVALID_SOCKET;
 		if (!ConnectSocket(index, errDescription)) {
 			return false;
 		}
-		logWriter.Write("Connected to HLR successfully.", index);
-		/*if (!LoginToHLR(index, errDescription)) {
-			return false;
-		}*/
-		m_busy.push_back(atomic<bool>(false));
-		//m_condVars.push_back(condition_variable());
-		//logWriter.Write("LoginToHLR: logged in successfully.", index);
+		m_connected[index] = true;
+		logWriter.Write("Connected to HLR successfully.", index+1);
+		m_busy[index] = false;
+		m_finished[index] = false;		
 	}
-	//m_mutexes.resize(config.m_numThreads);
-	//m_condVars.resize(config.m_numThreads);
-	m_ptasks.resize(config.m_numThreads);
-	m_presults.resize(config.m_numThreads);
-
+	
 	for (unsigned int i = 0; i < config.m_numThreads; ++i) {
 		m_threads.push_back(thread(&ConnectionPool::WorkerThread, this, i));
 	}
@@ -109,7 +102,7 @@ bool ConnectionPool::LoginToHLR(unsigned int index, string& errDescription)
 
 	while(nAttemptCounter < 10) {
 		if(m_config.m_debugMode > 0) 
-			logWriter.Write("Login attempt " + to_string(nAttemptCounter+1), index);
+			logWriter.Write("Login attempt " + to_string(nAttemptCounter+1), index+1);
 		
 		response[0] = STR_TERMINATOR;
 
@@ -138,7 +131,7 @@ bool ConnectionPool::LoginToHLR(unsigned int index, string& errDescription)
 						if (bytesRecv>0) {
 							recvbuf[bytesRecv] = STR_TERMINATOR;
 							if (m_config.m_debugMode > 0) 
-								logWriter.Write("LoginToHLR: HLR response: " + string(recvbuf), index);
+								logWriter.Write("LoginToHLR: HLR response: " + string(recvbuf), index+1);
 							_strupr_s(recvbuf, receiveBufferSize);
 							if(strstr(recvbuf, "USERCODE:")) {
 								// server asks for login
@@ -155,7 +148,7 @@ bool ConnectionPool::LoginToHLR(unsigned int index, string& errDescription)
 							if(strstr(recvbuf,"PASSWORD:")) {
 								// server asks for password
 								if (m_config.m_debugMode > 0) 
-									logWriter.Write("Sending password: " + m_config.m_password);
+									logWriter.Write("Sending password: " + m_config.m_password, index+1);
 								sprintf_s((char*) sendbuf, sendBufferSize, "%s\r\n", m_config.m_password.c_str());
 								if(send(m_sockets[index], sendbuf, strlen(sendbuf), 0) == SOCKET_ERROR) {
 									errDescription = "Error sending data on socket" + GetWinsockError();
@@ -167,7 +160,7 @@ bool ConnectionPool::LoginToHLR(unsigned int index, string& errDescription)
 							if(strstr(recvbuf,"DOMAIN:")) {
 								// server asks for domain
 								if (m_config.m_debugMode > 0) 
-									logWriter.Write("Sending domain: " + m_config.m_domain);
+									logWriter.Write("Sending domain: " + m_config.m_domain, index+1);
 								sprintf_s((char*)sendbuf, sendBufferSize, "%s\r\n", m_config.m_domain.c_str());
 								if(send( m_sockets[index], sendbuf,strlen(sendbuf), 0 )==SOCKET_ERROR) {
 									errDescription = "Error sending data on socket" + GetWinsockError();
@@ -198,7 +191,7 @@ bool ConnectionPool::LoginToHLR(unsigned int index, string& errDescription)
 			}
 			else {
 				if (m_config.m_debugMode > 0) 
-					logWriter.Write("LoginToHLR: select time-out", index);
+					logWriter.Write("LoginToHLR: select time-out", index+1);
 				nAttemptCounter++;
 				break;
 			}
@@ -207,6 +200,12 @@ bool ConnectionPool::LoginToHLR(unsigned int index, string& errDescription)
 	}
 	errDescription = "Unable to login to Ericsson HLR.";
 	return false;
+}
+
+bool ConnectionPool::Reconnect(unsigned int index)
+{
+	// TODO: write code
+	return true;
 }
 
 
@@ -324,26 +323,35 @@ void ConnectionPool::WorkerThread(unsigned int index)
 {
 	while (!m_stopFlag) {
 		unique_lock<mutex> locker(m_mutexes[index]);
-		while (!m_busy[index] && !m_stopFlag)
+		while(!m_stopFlag && !m_busy[index]) 
 			m_condVars[index].wait(locker);
-		if (!m_stopFlag) {
+		if (!m_stopFlag && m_busy[index] && !m_finished[index]) {
 			// simulate work
-			logWriter.Write(string("Got task: ") + m_ptasks[index], index);
-			this_thread::sleep_for(std::chrono::seconds(1 + rand() % 5));
-
-			//m_presults[index] = new string("SUCCESS");
-			logWriter.Write(string("Finished task ") + m_ptasks[index], index);
-			m_busy[index] = false;
+			if(!m_connected[index]) {
+				logWriter.Write("Not connected to HLR, trying to reconnect ...", index);
+				if (!Reconnect(index)) {
+					logWriter.Write("Reconnecting failed. Sending TRY_LATER result", index);
+					// TODO: fill result with TRY_LATER
+					//  ;
+				}
+				m_connected[index] = true;
+			}
+			this_thread::sleep_for(std::chrono::seconds(1 + rand() % 2));
+			m_resultCodes[index] = OPERATION_SUCCESS;
+			m_results[index] = "SUCCESS";
+			logWriter.Write("Finished task: " + m_tasks[index], index);
+			m_finished[index] = true;
 			m_condVars[index].notify_one();
 		}
 	}
 }
 
-bool ConnectionPool::TryAcquire(unsigned int& index, char* ptask)
+
+bool ConnectionPool::TryAcquire(unsigned int& index)
 {
 	const int maxSecondsToAcquire = 2;
 	int cycleCounter = 0;
-	
+
 	time_t startTime;
 	time(&startTime);
 	while (true) {
@@ -351,17 +359,15 @@ bool ConnectionPool::TryAcquire(unsigned int& index, char* ptask)
 			bool oldValue = m_busy[i];
 			if (!oldValue) {
 				if (m_busy[i].compare_exchange_weak(oldValue, true)) {
-					m_ptasks[i] = ptask;
-					m_condVars[i].notify_one();
 					index = i;
-					unique_lock<mutex> locker(m_mutexes[index]);
-					m_condVars[index].wait(locker);
+					m_finished[i] = false;
 					return true;
 				}
 			}
 		}
 		++cycleCounter;
 		if (cycleCounter > 1000) {
+			// check time elapsed
 			time_t now;
 			time(&now);
 			if (now - startTime > maxSecondsToAcquire)
@@ -369,8 +375,23 @@ bool ConnectionPool::TryAcquire(unsigned int& index, char* ptask)
 			cycleCounter = 0;
 		}
 	}
-	
 }
+
+
+int ConnectionPool::ExecCommand(unsigned int index, char* pTask, char* pResult)
+{
+	m_tasks[index] = pTask;
+	m_condVars[index].notify_one();
+	
+	unique_lock<mutex> locker(m_mutexes[index]);
+	while(!m_finished[index])
+		m_condVars[index].wait(locker);
+	int resultCode = m_resultCodes[index];
+	strncpy_s(pResult, MAX_DMS_RESPONSE_LEN, m_results[index].c_str(), m_results[index].length() + 1);
+	m_busy[index] = false;
+	return resultCode;
+}
+
 
 bool ConnectionPool::Close()
 {

@@ -6,20 +6,15 @@
 #include <time.h>
 #include <stdarg.h>
 #include <Winsock2.h>
+#include "Common.h"
 #include "ConfigContainer.h"
 #include "LogWriter.h"
 #include "ConnectionPool.h"
 
-#define MAX_DMS_RESPONSE_LEN				1024
-#define ERROR_INIT_PARAMS					-1
-#define INIT_FAIL							-2
-#define OPERATION_SUCCESS					0
-#define TRY_LATER							-33333
-
-
 Config config;
 LogWriter logWriter;
 ConnectionPool connectionPool;
+mutex g_coutMutex;
 
 __declspec (dllexport) int __stdcall InitService(char* szInitParams, char* szResult)
 {
@@ -69,16 +64,43 @@ __declspec (dllexport) int __stdcall InitService(char* szInitParams, char* szRes
 }
 
 
-__declspec (dllexport) int __stdcall ExecuteCommand(char **pParam, int nParamCount, char* szResult)
+__declspec (dllexport) int __stdcall ExecuteCommand(char **pParam, int nParamCount, char* pResult)
 {
-	unsigned int connIndex;
-	if (connectionPool.TryAcquire(connIndex, pParam[0])) {
-		logWriter.Write("task sent to " + to_string(connIndex));
-		return OPERATION_SUCCESS;
+	try {
+		char* pCommand = pParam[0];
+		logWriter << "-----**********************----";
+		logWriter << string("ExecuteCommand: ") + pCommand;
+		if (strlen(pCommand) > MAX_COMMAND_LEN) {
+			strcpy_s(pResult, MAX_DMS_RESPONSE_LEN, "Command is too long.");
+			logWriter << "Error: Command length exceeds 1020 symbols. Won't send to HLR.";
+			return ERROR_CMD_TOO_LONG;
+		}
+		// check logwriter exception
+		if (logWriter.GetException() != nullptr) {
+			try {
+				rethrow_exception(logWriter.GetException());
+			}
+			catch (const exception& ex) {
+				strncpy_s(pResult, MAX_DMS_RESPONSE_LEN, ex.what(), strlen(ex.what()) + 1);
+				logWriter << "LogWriter exception detected. Command won't execute until fixed";
+				logWriter.ClearException();
+				return EXCEPTION_CAUGHT;
+			}
+		}
+
+		unsigned int connIndex;
+		logWriter.Write(string("Trying to acquire connection for: ") + pCommand);
+		if (!connectionPool.TryAcquire(connIndex)) {
+			logWriter << string("No free connection for: ") + pCommand;
+			logWriter << "Sending TRY_LATER result";
+			return TRY_LATER;
+		}
+		logWriter.Write("Acquired connection #" + to_string(connIndex) + " for: " + pCommand);
+		return connectionPool.ExecCommand(connIndex, pParam[0], pResult);
 	}
-	else {
-		logWriter.Write("no free connection, try later");
-		return TRY_LATER;
+	catch(const exception& ex) {
+		strncpy_s(pResult, MAX_DMS_RESPONSE_LEN, ex.what(), strlen(ex.what()) + 1);
+		return EXCEPTION_CAUGHT;
 	}
 }
 
@@ -113,18 +135,44 @@ BOOL WINAPI DllMain(HINSTANCE hinstDLL,  DWORD fdwReason,  LPVOID lpvReserved)
 	return TRUE;
 }
 
+void TestCommandSender(int index)
+{
+	srand((unsigned int)time(NULL));
+	logWriter.Write(string("Started test command sender thread #") + to_string(index));
+	for (int i = 0; i < 10; ++i) {
+		char* task = new char[50];
+		char* result = new char[MAX_DMS_RESPONSE_LEN];
+		sprintf_s(task, 50, "EXECUTE HLR COMMAND %d", index * 10 + i);
+		result[0] = '\0';
+		int res = ExecuteCommand( &task, NUM_OF_EXECUTE_COMMAND_PARAMS, result);
+		
+		{
+			lock_guard<mutex> lock(g_coutMutex);
+			cout << "result code: " << res << endl;
+			cout << "result message: " << result << endl;
+		}
+		this_thread::sleep_for(std::chrono::seconds(1 + rand() % 3));
+		delete task;
+		delete result;
+	}
+}
+
 int main(int argc, char* argv[])
 {
+	// This is a test entry-point, because our target is DLL and main() is not exported.
+	// Different tests may be implemented here. Set configuration type to Application (*.exe)
+	// and run tests. If successful, set config to DLL and deploy it to DMS.
+
 	char initResult[1024];
-	char execResult[1024];
 	int initRes = InitService(argv[1], initResult);
 	if (initRes == OPERATION_SUCCESS) {
-		for (int i = 0; i < 100; i++) {
-			char* task = new char[50];
-			char result[50];
-			sprintf_s(task, 50, "EXECUTE HLR COMMAND %d", i);
-			ExecuteCommand((char**)&task, 1, result);
-			//this_thread::sleep_for(std::chrono::seconds(rand() % 2));
+		vector<thread> cmdSenderThreads;
+		for (int i = 0; i < 5; i++) {
+			cmdSenderThreads.push_back(thread(TestCommandSender, i));
+			this_thread::sleep_for(std::chrono::seconds(rand() % 2));
+		}
+		for(auto& thr : cmdSenderThreads) {
+			thr.join();
 		}
 	}
 	DeInitService(initResult);

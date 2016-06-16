@@ -19,19 +19,23 @@ public:
 	ConnectionPool();
 	~ConnectionPool();
 	bool Initialize(const Config& config, string& errDescription);
-	bool TryAcquire(unsigned int& index, char* ptask);
+	bool TryAcquire(unsigned int& index);
+	int ExecCommand(unsigned int index, char* pTask, char* pResult);
 	bool Close();
 	
 private:
 	static const int receiveBufferSize = 65000;
 	static const int sendBufferSize = 1024;
-	vector<int> m_sockets;
+	int m_sockets[MAX_THREADS];
 	vector<thread> m_threads;
-	vector<atomic_bool> m_busy;
+	bool m_connected[MAX_THREADS];
+	atomic_bool m_busy[MAX_THREADS];
+	bool m_finished[MAX_THREADS];
 	condition_variable m_condVars[MAX_THREADS];
 	mutex m_mutexes[MAX_THREADS];
-	vector<char*> m_ptasks;
-	vector<string*> m_presults;
+	string m_tasks[MAX_THREADS];
+	int m_resultCodes[MAX_THREADS];
+	string m_results[MAX_THREADS];
 	Config m_config;
 	bool m_stopFlag;
 
@@ -69,6 +73,7 @@ private:
 	void WorkerThread(unsigned int index);
 	bool ConnectSocket(unsigned int index, string& errDescription);
 	bool LoginToHLR(unsigned int index, string& errDescription);
+	bool Reconnect(unsigned int index);
 	void TelnetParse(unsigned char* recvbuf, int* bytesRecv, int socketFD);
 	string GetWinsockError();
 };
