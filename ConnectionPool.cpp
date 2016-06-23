@@ -208,10 +208,23 @@ bool ConnectionPool::LoginToHLR(unsigned int index, string& errDescription)
 	return false;
 }
 
+
 bool ConnectionPool::Reconnect(unsigned int index, string& errDescription)
 {
-	// TODO: write code
-	return true;
+	logWriter.Write("Trying to reconnect ...", index);
+	shutdown(m_sockets[index], SD_BOTH);
+	closesocket(m_sockets[index]);
+	m_connected[index] = false;
+	if(ConnectSocket(index, errDescription)) {
+		if(LoginToHLR(index, errDescription)) {
+			logWriter.Write("Reconnected and logged in successfully", index);
+			m_connected[index] = true;
+			return true;
+		}
+	}
+	
+	logWriter.Write("Unable to reconnect.", index);
+	return false;
 }
 
 
@@ -343,11 +356,10 @@ bool ConnectionPool::HLRIgnoredMessage(string message)
 int ConnectionPool::ProcessHLRCommand(unsigned int index, string& errDescription)
 {
 	if(!m_connected[index]) {
-		logWriter.Write("Not connected to HLR, trying to reconnect ...", index);
+		logWriter.Write("Not connected to HLR", index);
 		if (!Reconnect(index, errDescription)) {
 			return TRY_LATER;
 		}
-		m_connected[index] = true;
 	}
 
 	char recvBuf[receiveBufferSize];
@@ -356,14 +368,12 @@ int ConnectionPool::ProcessHLRCommand(unsigned int index, string& errDescription
 	int bytesRecv = recv(m_sockets[index], recvBuf, receiveBufferSize, 0) ;
 	if (bytesRecv == SOCKET_ERROR && WSAGetLastError() != WSAEWOULDBLOCK)    {
 		logWriter.Write("Error receiving data from host" + GetWinsockError(), index);
-		m_connected[index] = false;
 		if (!Reconnect(index, errDescription)) {
 			return TRY_LATER;
 		}
-		m_connected[index] = true;
 	}
 	if(bytesRecv > 0) {
-//		TelnetParse((unsigned char*) recvBuf, &bytesRecv, m_sockets[index]);
+		TelnetParse((unsigned char*) recvBuf, &bytesRecv, m_sockets[index]);
 		recvBuf[bytesRecv]='\0';
 		if (m_config.m_debugMode > 0) 
 			logWriter.Write(string("HLR response: ") + recvBuf);
@@ -386,7 +396,7 @@ int ConnectionPool::ProcessHLRCommand(unsigned int index, string& errDescription
 	struct timeval tv;
 	hlrResponse[0] = STR_TERMINATOR;
 	while (!m_finished[index]) {
-		tv.tv_sec = 10;
+		tv.tv_sec = SOCKET_TIMEOUT_SEC;
 		tv.tv_usec = 0;
 		FD_ZERO(&read_set);
 		FD_ZERO(&error_set);
@@ -406,7 +416,7 @@ int ConnectionPool::ProcessHLRCommand(unsigned int index, string& errDescription
 					return TRY_LATER;
 				}
 				else {
-//					TelnetParse((unsigned char*)recvBuf, &bytesRecv, m_sockets[index]);
+					TelnetParse((unsigned char*)recvBuf, &bytesRecv, m_sockets[index]);
 					if (bytesRecv > 0) {
 						recvBuf[bytesRecv] = STR_TERMINATOR;
 						if (m_config.m_debugMode > 0)
@@ -478,6 +488,7 @@ int ConnectionPool::ProcessHLRCommand(unsigned int index, string& errDescription
 			}
 		}
 	}
+	return OPERATION_SUCCESS;
 }
 
 
@@ -490,9 +501,6 @@ void ConnectionPool::WorkerThread(unsigned int index)
 		if (!m_stopFlag && m_busy[index] && !m_finished[index]) {
 			string errDescription;
 			try {
-	/*			int res = 0; 
-				errDescription = "SUCCESS";
-				this_thread::sleep_for(chrono::milliseconds(500 + rand() % 500));*/
 				int res = ProcessHLRCommand(index, errDescription);
 				logWriter.Write("Finished task: " + m_tasks[index], index);
 				logWriter.Write("Task result: " + to_string(res), index);

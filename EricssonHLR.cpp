@@ -21,41 +21,41 @@ __declspec (dllexport) int __stdcall InitService(char* szInitParams, char* szRes
 	try {
 		string errDescription;
 		if (!config.ReadConfigString(szInitParams, errDescription)) {
-			strncpy_s(szResult, MAX_DMS_RESPONSE_LEN, errDescription.c_str(), errDescription.length());
+			strncpy_s(szResult, MAX_DMS_RESPONSE_LEN, errDescription.c_str(), errDescription.length() + 1);
 			return ERROR_INIT_PARAMS;
 		}
-		logWriter.Initialize(config.m_logPath, errDescription);
-		logWriter.Write(LogMessage(time_t(), MAIN_THREAD_NUM, "***** Starting Ericsson HLR driver *****"));
-		logWriter.Write(LogMessage(time_t(), MAIN_THREAD_NUM, string("Original init string: ") + string(szInitParams)));
-		logWriter.Write(LogMessage(time_t(), MAIN_THREAD_NUM, string("Parsed init params: ")));
-		logWriter.Write(LogMessage(time_t(), MAIN_THREAD_NUM, string("   Host: ") + config.m_hostName));
-		logWriter.Write(LogMessage(time_t(), MAIN_THREAD_NUM, string("   Port: ") + to_string(config.m_port)));
-		logWriter.Write(LogMessage(time_t(), MAIN_THREAD_NUM, string("   Username: ") + config.m_username));
-		logWriter.Write(LogMessage(time_t(), MAIN_THREAD_NUM, string("   Password: ") + config.m_password));
-		logWriter.Write(LogMessage(time_t(), MAIN_THREAD_NUM, string("   Domain: ") + config.m_domain));
-		logWriter.Write(LogMessage(time_t(), MAIN_THREAD_NUM, string("   Log path: ") + config.m_logPath));
-		logWriter.Write(LogMessage(time_t(), MAIN_THREAD_NUM, string("   Ignored HLR messages file: ") +
-			config.m_ignoreMsgFilename));
-		logWriter.Write(LogMessage(time_t(), MAIN_THREAD_NUM, string("   Debug mode: ") + 
-			to_string(config.m_debugMode)));
+		if (!logWriter.Initialize(config.m_logPath, errDescription)) {
+			strncpy_s(szResult, MAX_DMS_RESPONSE_LEN, errDescription.c_str(), errDescription.length() + 1);
+			return INIT_FAIL;
+		}
+		logWriter.Write("***** Starting Ericsson HLR driver *****");
+		logWriter.Write(string("Original init string: ") + string(szInitParams));
+		logWriter.Write(string("Parsed init params: "));
+		logWriter.Write(string("   Host: ") + config.m_hostName);
+		logWriter.Write(string("   Port: ") + to_string(config.m_port));
+		logWriter.Write(string("   Username: ") + config.m_username);
+		logWriter.Write(string("   Password: ") + config.m_password);
+		logWriter.Write(string("   Domain: ") + config.m_domain);
+		logWriter.Write(string("   Log path: ") + config.m_logPath);
+		logWriter.Write(string("   Ignored HLR messages file: ") + config.m_ignoreMsgFilename);
+		logWriter.Write(string("   Debug mode: ") + to_string(config.m_debugMode));
 
 		if(!connectionPool.Initialize(config, errDescription)) {
-			logWriter.Write(LogMessage(time_t(), MAIN_THREAD_NUM, "Unable to set up connection to given host: " + 
-				errDescription));
+			logWriter.Write("Unable to set up connection to given host: " + errDescription);
 			logWriter.Stop();
-			strncpy_s(szResult, MAX_DMS_RESPONSE_LEN, errDescription.c_str(), errDescription.length());
+			strncpy_s(szResult, MAX_DMS_RESPONSE_LEN, errDescription.c_str(), errDescription.length() + 1);
 			return ERROR_INIT_PARAMS;
 		}
 	}
 	catch(LogWriterException& e) {
-		strncpy_s(szResult, MAX_DMS_RESPONSE_LEN, e.m_message.c_str(), e.m_message.length());
+		strncpy_s(szResult, MAX_DMS_RESPONSE_LEN, e.m_message.c_str(), e.m_message.length() + 1);
 		connectionPool.Close();
 		logWriter.Stop();
 		return INIT_FAIL;
 	}
 	catch(std::exception& e)	{
 		//const char* pmessage = "Exception caught while trying to initialize.";
-		strncpy_s(szResult, MAX_DMS_RESPONSE_LEN, e.what(), strlen(e.what()));
+		strncpy_s(szResult, MAX_DMS_RESPONSE_LEN, e.what(), strlen(e.what()) +1);
 		connectionPool.Close();
 		logWriter.Stop();
 		return INIT_FAIL;
@@ -135,19 +135,21 @@ BOOL WINAPI DllMain(HINSTANCE hinstDLL,  DWORD fdwReason,  LPVOID lpvReserved)
 	return TRUE;
 }
 
-void TestCommandSender(int index)
+void TestCommandSender(int index, int commandsNum, int minSleepTime)
 {
 	srand((unsigned int)time(NULL));
 	logWriter.Write(string("Started test command sender thread #") + to_string(index));
-	for (int i = 0; i < 100; ++i) {
+	for (int i = 0; i < commandsNum; ++i) {
 		char* task = new char[50];
 		char* result = new char[MAX_DMS_RESPONSE_LEN];
 		sprintf_s(task, 50, "HGSDC:MSISDN=79047186560,SUD=CLIP-%d;", rand() % 5, index * 10 + i);
 		result[0] = '\0';
 		int res;
 		res = ExecuteCommand(&task, NUM_OF_EXECUTE_COMMAND_PARAMS, result);
-		
-		this_thread::sleep_for(std::chrono::seconds(1 + rand() % 3));
+		//if(res != OPERATION_SUCCESS) {
+			//cout << "ExecuteCommand res: " << res << ". " << result << endl;
+		//}
+		this_thread::sleep_for(std::chrono::seconds(minSleepTime + rand() % 3));
 		delete task;
 		delete result;
 	}
@@ -159,20 +161,44 @@ int main(int argc, char* argv[])
 	// Different tests may be implemented here. Set configuration type to Application (*.exe)
 	// and run tests. If successful, set config to DLL and deploy it to DMS.
 
-	char initResult[1024];
-	int initRes = InitService(argv[1], initResult);
+	char initResDescription[MAX_DMS_RESPONSE_LEN];
+	int initRes = InitService(argv[1], initResDescription);
+	cout << "InitService res: " << initRes << (initRes == OPERATION_SUCCESS ? " (SUCCESS)" : " (FAIL)") << endl;
+	if (initRes != OPERATION_SUCCESS) {
+		cout << "Description: " << initResDescription << endl;
+		char dummy;
+		cout << ">";
+		std::cin >> dummy;
+		return INIT_FAIL;
+	}
+	cout << "Running multithreaded test in " << config.m_numThreads << " threads ..." << endl;
 	if (initRes == OPERATION_SUCCESS) {
 		vector<thread> cmdSenderThreads;
 		for (int i = 0; i < config.m_numThreads; i++) {
-			cmdSenderThreads.push_back(thread(TestCommandSender, i));
+			cmdSenderThreads.push_back(thread(TestCommandSender, i, 20, 1));
+			// run next thread after a random time-out
 			this_thread::sleep_for(std::chrono::seconds(rand() % 2));
 		}
 		for(auto& thr : cmdSenderThreads) {
 			thr.join();
 		}
 	}
-	DeInitService(initResult);
+	cout << "*****************************" << endl;
+	cout << "Multithreaded test PASSED. Check log file written at logpath." << endl;
 
+	cout << "Running reconnect test ..." << endl;
+	thread reconnectTest(TestCommandSender, 0, 3, 310);
+	reconnectTest.join();
+	cout << "*****************************" << endl;
+	cout << "Reconnect test PASSED. Check log file. There must be a message like \"Reconnected successfully\"" << endl;
+
+	int deinitRes;
+	char deinitResDescription[MAX_DMS_RESPONSE_LEN];
+	deinitRes = DeInitService(deinitResDescription);
+	cout << "DeinitService result: " << deinitRes << (deinitRes == OPERATION_SUCCESS ? " (SUCCESS)" : " (FAIL)") << endl;
+	if (deinitRes != OPERATION_SUCCESS) {
+		cout << "Description: " << initResDescription << endl;
+	}
 	char dummy;
 	cout << ">";
 	std::cin >> dummy;

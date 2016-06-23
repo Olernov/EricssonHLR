@@ -1,7 +1,30 @@
 #include <iostream>
 #include <string>
+#include <windows.h>
 #include "LogWriter.h"
 
+
+void LogWriter::CheckLogFile(time_t messageTime)
+{
+	tm messageTimeTm;
+	localtime_s(&messageTimeTm, &messageTime);
+	char dateBuf[30];
+	sprintf_s(dateBuf, 30, "%4.4d%2.2d%2.2d", messageTimeTm.tm_year+1900, messageTimeTm.tm_mon+1, messageTimeTm.tm_mday);
+	if(string(dateBuf) != m_logFileDate) {
+		if(m_logStream.is_open()) {
+			m_logStream.close();
+		}
+		char logName[MAX_PATH];
+		if(!m_logPath.empty())
+			sprintf_s(logName, MAX_PATH, "%s\\EricssonHLR_%s.log", m_logPath.c_str(), dateBuf);
+		else
+			sprintf_s(logName, MAX_PATH, "EricssonHLR_%s.log", dateBuf);
+		m_logStream.open(logName, fstream::app|fstream::out);
+		if (!m_logStream.is_open())
+			throw runtime_error(string("Unable to open log file ") + string(logName));
+		m_logFileDate = dateBuf;
+	}
+}
 
 
 void LogWriter::WriteThreadFunction()
@@ -15,7 +38,8 @@ void LogWriter::WriteThreadFunction()
 					localtime_s(&messageTime, &pMessage->m_time);
 					char timeBuf[30];
 					strftime(timeBuf, 29, "%H:%M:%S", &messageTime);
-					cout << timeBuf << "  |  "
+					CheckLogFile(pMessage->m_time);
+					m_logStream << timeBuf << "  |  "
 						<< (pMessage->m_threadNum != MAIN_THREAD_NUM ? to_string(pMessage->m_threadNum) : " ")
 						<< "  |  " << pMessage->m_message.c_str() << endl;
 					delete pMessage;
@@ -50,6 +74,9 @@ LogWriter::~LogWriter()
 bool LogWriter::Initialize(const string& logPath, string& errDescription)
 {
 	m_logPath = logPath;
+	time_t now;
+	time(&now);
+	CheckLogFile(now);
 	m_writeThread = thread(&LogWriter::WriteThreadFunction, this);
 	return true;
 }
@@ -93,5 +120,6 @@ bool LogWriter::Stop()
 	m_stopFlag = true;
 	if (m_writeThread.joinable())
 		m_writeThread.join();
+	m_logStream.close();
 	return true;
 }

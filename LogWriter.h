@@ -2,6 +2,7 @@
 #include <queue>
 #include <thread>
 #include <time.h>
+#include <fstream>
 #include <mutex>
 #include <exception>
 #include <stdexcept>
@@ -52,5 +53,8 @@ private:
 	atomic<bool> m_stopFlag;
 	thread m_writeThread;
 	mutex m_exceptionMutex;
+	ofstream m_logStream;
+	string m_logFileDate;
 	void WriteThreadFunction();
+	void CheckLogFile(time_t messageTime);
 };

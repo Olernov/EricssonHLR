@@ -13,4 +13,6 @@
 #define TRY_LATER							-33333
 #define MAX_COMMAND_LEN						1020
 
+#define SOCKET_TIMEOUT_SEC					10
+
 #define NUM_OF_EXECUTE_COMMAND_PARAMS		1
