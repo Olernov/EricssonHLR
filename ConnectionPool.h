@@ -73,8 +73,11 @@ private:
 	void WorkerThread(unsigned int index);
 	bool ConnectSocket(unsigned int index, string& errDescription);
 	bool LoginToHLR(unsigned int index, string& errDescription);
-	bool Reconnect(unsigned int index);
+	bool Reconnect(unsigned int index, string& errDescription);
 	void TelnetParse(unsigned char* recvbuf, int* bytesRecv, int socketFD);
+	void FinishWithNetworkError(string logMessage, unsigned int index);
+	int ProcessHLRCommand(unsigned int index, string &errDescription);
+	bool HLRIgnoredMessage(string message);
 	string GetWinsockError();
 };
 

@@ -56,9 +56,14 @@ bool LogWriter::Initialize(const string& logPath, string& errDescription)
 
 bool LogWriter::Write(const LogMessage& message)
 {
-	LogMessage* pnewMessage = new LogMessage(message);
-	if (!messageQueue.push(pnewMessage))
-		throw LogWriterException("Unable to add message to log queue");
+	try {
+		LogMessage* pnewMessage = new LogMessage(message);
+		if (!messageQueue.push(pnewMessage))
+			throw LogWriterException("Unable to add message to log queue");
+	}
+	catch(...){
+		cerr << "exception when LogWriter::Write" << endl;
+	}
 	return true;
 }
 
@@ -67,18 +72,13 @@ bool LogWriter::Write(string message, short threadIndex)
 	time_t now;
 	time(&now);
 	LogMessage* pnewMessage = new LogMessage(now, threadIndex, message);
-	if (!messageQueue.push(pnewMessage))
-		throw LogWriterException("Unable to add message to log queue");
+	Write(*pnewMessage);
 	return true;
 }
 
 void LogWriter::operator<<(const string& message)
 {
-	time_t now;
-	time(&now);
-	LogMessage* pnewMessage = new LogMessage(now, MAIN_THREAD_NUM, message);
-	if (!messageQueue.push(pnewMessage))
-		throw LogWriterException("Unable to add message to log queue");
+	Write(message, MAIN_THREAD_NUM);
 }
 
 void LogWriter::ClearException()

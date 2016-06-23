@@ -139,18 +139,14 @@ void TestCommandSender(int index)
 {
 	srand((unsigned int)time(NULL));
 	logWriter.Write(string("Started test command sender thread #") + to_string(index));
-	for (int i = 0; i < 10; ++i) {
+	for (int i = 0; i < 100; ++i) {
 		char* task = new char[50];
 		char* result = new char[MAX_DMS_RESPONSE_LEN];
-		sprintf_s(task, 50, "EXECUTE HLR COMMAND %d", index * 10 + i);
+		sprintf_s(task, 50, "HGSDC:MSISDN=79047186560,SUD=CLIP-%d;", rand() % 5, index * 10 + i);
 		result[0] = '\0';
-		int res = ExecuteCommand( &task, NUM_OF_EXECUTE_COMMAND_PARAMS, result);
+		int res;
+		res = ExecuteCommand(&task, NUM_OF_EXECUTE_COMMAND_PARAMS, result);
 		
-		{
-			lock_guard<mutex> lock(g_coutMutex);
-			cout << "result code: " << res << endl;
-			cout << "result message: " << result << endl;
-		}
 		this_thread::sleep_for(std::chrono::seconds(1 + rand() % 3));
 		delete task;
 		delete result;
@@ -167,7 +163,7 @@ int main(int argc, char* argv[])
 	int initRes = InitService(argv[1], initResult);
 	if (initRes == OPERATION_SUCCESS) {
 		vector<thread> cmdSenderThreads;
-		for (int i = 0; i < 5; i++) {
+		for (int i = 0; i < config.m_numThreads; i++) {
 			cmdSenderThreads.push_back(thread(TestCommandSender, i));
 			this_thread::sleep_for(std::chrono::seconds(rand() % 2));
 		}

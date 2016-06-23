@@ -49,6 +49,12 @@ bool ConnectionPool::Initialize(const Config& config, string& errDescription)
 		}
 		m_connected[index] = true;
 		logWriter.Write("Connected to HLR successfully.", index+1);
+		
+#ifndef DONT_LOGIN_TO_HLR		
+			if (!LoginToHLR(index, errDescription)) {
+				return false;
+			}
+#endif
 		m_busy[index] = false;
 		m_finished[index] = false;		
 	}
@@ -122,7 +128,7 @@ bool ConnectionPool::LoginToHLR(unsigned int index, string& errDescription)
 				if (FD_ISSET( m_sockets[index], &read_set))  {
 					// receive some data from server
 					recvbuf[0] = STR_TERMINATOR;
-					if ( ( bytesRecv = recv( m_sockets[index], recvbuf, sizeof(recvbuf), 0 ) ) == SOCKET_ERROR )  {
+					if ((bytesRecv = recv( m_sockets[index], recvbuf, sizeof(recvbuf), 0 ) ) == SOCKET_ERROR)  {
 						errDescription = "LoginToHLR: Error receiving data from host" + GetWinsockError();
 						return false;
 					}
@@ -202,7 +208,7 @@ bool ConnectionPool::LoginToHLR(unsigned int index, string& errDescription)
 	return false;
 }
 
-bool ConnectionPool::Reconnect(unsigned int index)
+bool ConnectionPool::Reconnect(unsigned int index, string& errDescription)
 {
 	// TODO: write code
 	return true;
@@ -212,7 +218,7 @@ bool ConnectionPool::Reconnect(unsigned int index)
 // This code is taken from NetCat project http://netcat.sourceforge.net/
 void ConnectionPool::TelnetParse(unsigned char* recvbuf,int* bytesRecv,int socketFD)
 {
-	static unsigned char getrq[4];
+	/*static*/ unsigned char getrq[4];
 	unsigned char putrq[4], *buf=recvbuf;
 	int eat_chars=0;
 	int l = 0;
@@ -318,6 +324,162 @@ do_eat_chars:
 	}
 }
 
+void ConnectionPool::FinishWithNetworkError(string logMessage, unsigned int index)
+{
+	logWriter.Write("ExecuteCommand: " + logMessage + GetWinsockError(), index);
+	m_resultCodes[index] = TRY_LATER;
+	m_results[index] = "Network error sending message to HLR";
+	m_finished[index] = true;
+	m_condVars[index].notify_one();
+}
+
+bool ConnectionPool::HLRIgnoredMessage(string message)
+{
+	// TODO: add analyzis
+	return false;
+}
+
+
+int ConnectionPool::ProcessHLRCommand(unsigned int index, string& errDescription)
+{
+	if(!m_connected[index]) {
+		logWriter.Write("Not connected to HLR, trying to reconnect ...", index);
+		if (!Reconnect(index, errDescription)) {
+			return TRY_LATER;
+		}
+		m_connected[index] = true;
+	}
+
+	char recvBuf[receiveBufferSize];
+	char sendBuf[sendBufferSize]; 
+	char hlrResponse[receiveBufferSize];
+	int bytesRecv = recv(m_sockets[index], recvBuf, receiveBufferSize, 0) ;
+	if (bytesRecv == SOCKET_ERROR && WSAGetLastError() != WSAEWOULDBLOCK)    {
+		logWriter.Write("Error receiving data from host" + GetWinsockError(), index);
+		m_connected[index] = false;
+		if (!Reconnect(index, errDescription)) {
+			return TRY_LATER;
+		}
+		m_connected[index] = true;
+	}
+	if(bytesRecv > 0) {
+//		TelnetParse((unsigned char*) recvBuf, &bytesRecv, m_sockets[index]);
+		recvBuf[bytesRecv]='\0';
+		if (m_config.m_debugMode > 0) 
+			logWriter.Write(string("HLR response: ") + recvBuf);
+		_strupr_s(recvBuf, receiveBufferSize);
+		if(strstr(recvBuf,"TIME OUT")) {
+			logWriter.Write("Time-out report from HLR, restoring connection ...", index);
+			sprintf_s(sendBuf, sendBufferSize, "\r\n");
+			if(send(m_sockets[index],(char*) sendBuf, strlen(sendBuf), 0) == SOCKET_ERROR) {
+				errDescription = "Socket error when sending restore connection message" + GetWinsockError();
+				return TRY_LATER;
+			}
+		}
+	}
+	sprintf_s(sendBuf, sendBufferSize, "%s\r\n", m_tasks[index]);
+	if(send(m_sockets[index], (char*) sendBuf, strlen(sendBuf), 0) == SOCKET_ERROR) {
+		errDescription = "Socket error when sending command" + GetWinsockError();
+		return TRY_LATER;
+	}
+	fd_set read_set, error_set;
+	struct timeval tv;
+	hlrResponse[0] = STR_TERMINATOR;
+	while (!m_finished[index]) {
+		tv.tv_sec = 10;
+		tv.tv_usec = 0;
+		FD_ZERO(&read_set);
+		FD_ZERO(&error_set);
+		FD_SET(m_sockets[index], &read_set);
+		FD_SET(m_sockets[index], &error_set);
+		if (select(m_sockets[index] + 1, &read_set, NULL, &error_set, &tv) != 0) {
+			if (FD_ISSET(m_sockets[index], &error_set)) {
+				errDescription = "Socket error when calling FD_ISSET" + GetWinsockError();
+				return TRY_LATER;
+			}
+			// check for message
+			if (FD_ISSET(m_sockets[index], &read_set)) {
+				// receive some data from server
+				int bytesRecv = recv(m_sockets[index], recvBuf, receiveBufferSize, 0);
+				if (bytesRecv == SOCKET_ERROR)    {
+					errDescription = "Socket error when receiving data" + GetWinsockError();
+					return TRY_LATER;
+				}
+				else {
+//					TelnetParse((unsigned char*)recvBuf, &bytesRecv, m_sockets[index]);
+					if (bytesRecv > 0) {
+						recvBuf[bytesRecv] = STR_TERMINATOR;
+						if (m_config.m_debugMode > 0)
+							logWriter.Write(string("HLR response: ") + recvBuf, index);
+						strncat_s(hlrResponse, receiveBufferSize, recvBuf, bytesRecv + 1);
+
+						// check HLR ignored message list
+						if (strstr(hlrResponse, "EXECUTED") || HLRIgnoredMessage(hlrResponse)) {
+							errDescription = "Successful execution.";
+							return OPERATION_SUCCESS;
+						}
+
+						if (char* p = strstr(hlrResponse, "NOT ACCEPTED")) {
+							p += strlen("NOT ACCEPTED");
+							p += strspn(p, " ;\r\n");
+
+							// remove spaces, \r and \n at the end of string
+							char* p2 = hlrResponse + strlen(hlrResponse) - 1;
+							while (p2 > p && (*p2 == ' ' || *p2 == '\r' || *p2 == '\n' || *p2 == '\t'))
+								p2--;
+							if (p2 > p  &&  p2 < hlrResponse + strlen(hlrResponse) - 1) *(p2 + 1) = '\0';
+
+							// replace \r and \n with spaces 
+							for (char* p3 = p; p3 < p2; p3++)
+								if (*p3 == '\r' || *p3 == '\n') *p3 = ' ';
+
+							p[MAX_DMS_RESPONSE_LEN] = STR_TERMINATOR;
+							errDescription = string(p);
+							return CMD_NOTEXECUTED;
+						}
+
+						if (strstr(hlrResponse, m_tasks[index].c_str())
+								&& !strcmp(hlrResponse + strlen(hlrResponse) - 2, "\x03<")) {
+							// if HLR answers with echo and prompt then send ';'
+							if (m_config.m_debugMode > 0) 
+								logWriter.Write("Command echo received. Sending ';' ...", index);
+							if (send(m_sockets[index], ";\r\n", 3, 0) == SOCKET_ERROR) {
+								errDescription = "Socket error when sending data" + GetWinsockError();
+								return TRY_LATER;
+							}
+							hlrResponse[0] = STR_TERMINATOR; // start composing new HLR response
+						}
+					}
+					else {
+						if (m_config.m_debugMode > 0)
+							logWriter.Write("No bytes to read", index);
+						if (strlen(hlrResponse)) {
+							errDescription = string("Unable to parse HLR response:\n") + hlrResponse;
+							return CMD_UNKNOWN;
+						}
+						else {
+							errDescription = "No response received from HLR.";
+							return TRY_LATER;
+						}
+					}
+				}
+			}
+		}
+		else {
+			if (m_config.m_debugMode > 0)
+				logWriter.Write("ExecuteCommand: socket time-out", index);
+			if (strlen(hlrResponse)) {
+				errDescription = string("Unable to parse HLR response:\n") + hlrResponse;
+				return CMD_UNKNOWN;
+			}
+			else {
+				errDescription = "No response received from HLR.";
+				return TRY_LATER;
+			}
+		}
+	}
+}
+
 
 void ConnectionPool::WorkerThread(unsigned int index)
 {
@@ -326,20 +488,28 @@ void ConnectionPool::WorkerThread(unsigned int index)
 		while(!m_stopFlag && !m_busy[index]) 
 			m_condVars[index].wait(locker);
 		if (!m_stopFlag && m_busy[index] && !m_finished[index]) {
-			// simulate work
-			if(!m_connected[index]) {
-				logWriter.Write("Not connected to HLR, trying to reconnect ...", index);
-				if (!Reconnect(index)) {
-					logWriter.Write("Reconnecting failed. Sending TRY_LATER result", index);
-					// TODO: fill result with TRY_LATER
-					//  ;
-				}
-				m_connected[index] = true;
+			string errDescription;
+			try {
+	/*			int res = 0; 
+				errDescription = "SUCCESS";
+				this_thread::sleep_for(chrono::milliseconds(500 + rand() % 500));*/
+				int res = ProcessHLRCommand(index, errDescription);
+				logWriter.Write("Finished task: " + m_tasks[index], index);
+				logWriter.Write("Task result: " + to_string(res), index);
+				logWriter.Write("Description: " + errDescription, index);
+				m_resultCodes[index] = res;
+				m_results[index] = errDescription;
 			}
-			this_thread::sleep_for(std::chrono::seconds(1 + rand() % 2));
-			m_resultCodes[index] = OPERATION_SUCCESS;
-			m_results[index] = "SUCCESS";
-			logWriter.Write("Finished task: " + m_tasks[index], index);
+			catch(const exception& ex) {
+				logWriter.Write(string("Exception caught: ") + ex.what(), index);
+				m_resultCodes[index] = EXCEPTION_CAUGHT;
+				m_results[index] = ex.what();
+			}
+			catch(...) {
+				logWriter.Write("Unknown exception caught", index);
+				m_resultCodes[index] = EXCEPTION_CAUGHT;
+				m_results[index] = "Unknown exception";
+			}
 			m_finished[index] = true;
 			m_condVars[index].notify_one();
 		}

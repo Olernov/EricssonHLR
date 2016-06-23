@@ -45,7 +45,7 @@ public:
 	bool Stop();
 private:
 	static const int queueSize = 128;
-	static const int sleepWhenQueueEmpty = 1;
+	static const int sleepWhenQueueEmpty = 0;
 	exception_ptr m_excPointer;
 	string m_logPath;
 	boost::lockfree::queue<LogMessage*> messageQueue;
