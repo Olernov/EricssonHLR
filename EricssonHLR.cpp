@@ -24,6 +24,12 @@ __declspec (dllexport) int __stdcall InitService(char* szInitParams, char* szRes
 			strncpy_s(szResult, MAX_DMS_RESPONSE_LEN, errDescription.c_str(), errDescription.length() + 1);
 			return ERROR_INIT_PARAMS;
 		}
+		if (!config.m_ignoredMsgFilename.empty()) {
+			if (!config.ReadIgnoredMsgFile(errDescription)) {
+				strncpy_s(szResult, MAX_DMS_RESPONSE_LEN, errDescription.c_str(), errDescription.length() + 1);
+				return ERROR_INIT_PARAMS;
+			}
+		}
 		if (!logWriter.Initialize(config.m_logPath, errDescription)) {
 			strncpy_s(szResult, MAX_DMS_RESPONSE_LEN, errDescription.c_str(), errDescription.length() + 1);
 			return INIT_FAIL;
@@ -37,7 +43,7 @@ __declspec (dllexport) int __stdcall InitService(char* szInitParams, char* szRes
 		logWriter.Write(string("   Password: ") + config.m_password);
 		logWriter.Write(string("   Domain: ") + config.m_domain);
 		logWriter.Write(string("   Log path: ") + config.m_logPath);
-		logWriter.Write(string("   Ignored HLR messages file: ") + config.m_ignoreMsgFilename);
+		logWriter.Write(string("   Ignored HLR messages file: ") + config.m_ignoredMsgFilename);
 		logWriter.Write(string("   Debug mode: ") + to_string(config.m_debugMode));
 
 		if(!connectionPool.Initialize(config, errDescription)) {
@@ -190,7 +196,7 @@ int main(int argc, char* argv[])
 	thread reconnectTest(TestCommandSender, 0, 3, 310);
 	reconnectTest.join();
 	cout << "*****************************" << endl;
-	cout << "Reconnect test PASSED. Check log file. There must be a message like \"Reconnected successfully\"" << endl;
+	cout << "Reconnect test PASSED. Check log file. There must be a message like \"Restoring connection\"" << endl;
 
 	int deinitRes;
 	char deinitResDescription[MAX_DMS_RESPONSE_LEN];

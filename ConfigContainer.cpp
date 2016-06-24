@@ -50,7 +50,7 @@ bool Config::ReadConfigString(const string& configString, string& errDescription
 					m_logPath = option_value;
 				}
 				else if (option_name.compare("IGNORE_MSG_FILE") == 0)
-					m_ignoreMsgFilename = option_value;
+					m_ignoredMsgFilename = option_value;
 				else if (option_name.compare("DEBUG") == 0) {
 					try {
 						m_debugMode = stoul(option_value);
@@ -91,4 +91,73 @@ bool Config::ReadConfigString(const string& configString, string& errDescription
 			" passed for NUM_THREADS. Valid values from 1 to 8.";
 
 	return errDescription.empty();
+}
+
+
+bool Config::ReadIgnoredMsgFile(string& errDescription)
+{
+	ifstream ignoredMsgFile(m_ignoredMsgFilename);
+	if (!ignoredMsgFile.is_open()) {
+		errDescription = "Could not open ignored msg file: " + m_ignoredMsgFilename;
+		return false;
+	}
+	enum {
+		nothing,
+		ignore_section,
+		retry_section
+	} state = nothing;
+	string line;
+	bool result = false;
+	errDescription.clear();
+	try {
+		while (getline(ignoredMsgFile, line)) {
+			size_t pos;
+			if ((pos = line.find_first_not_of(" \t")) != string::npos)
+				line = line.substr(pos);
+			pos = line.find_first_of(" \t#");
+			if (pos != string::npos)
+				line = line.substr(0, pos);
+			if (!line.empty() ) {
+				transform(line.begin(), line.end(), line.begin(), ::toupper);	
+				switch (state) {
+				case nothing:
+					if (line == "[IGNORE]") {
+						state = ignore_section;
+					}
+					else if (line == "[RETRY]") {
+						throw runtime_error("ignored messages file: [RETRY] section found when [IGNORE] expected");
+					}
+					else {
+						throw runtime_error("ignored messages file: expected [IGNORE] but found " + line);
+					}
+					break;
+				case ignore_section:
+					if (line == "[RETRY]") {
+						state = retry_section;
+					}
+					else {
+						m_ignoredHLRMessages.insert(line);
+					}
+					break;
+				case retry_section:
+					m_retryHLRMessages.insert(line);
+					break;
+				}
+			}
+		}
+		// final state analyzis
+		switch (state) {
+		case nothing:
+			throw runtime_error("[IGNORE] section not found in ignored messages file");
+		case ignore_section:
+			throw runtime_error("[RETRY] section not found in ignored messages file");
+		case retry_section:
+			result = true;
+		}
+	}
+	catch(const exception& ex) {
+		errDescription = ex.what();
+	}
+	ignoredMsgFile.close();
+	return result;
 }
