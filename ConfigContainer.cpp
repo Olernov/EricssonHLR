@@ -114,9 +114,7 @@ bool Config::ReadIgnoredMsgFile(string& errDescription)
 			size_t pos;
 			if ((pos = line.find_first_not_of(" \t")) != string::npos)
 				line = line.substr(pos);
-			pos = line.find_first_of(" \t#");
-			if (pos != string::npos)
-				line = line.substr(0, pos);
+			line.erase(line.find_last_not_of(" \t") + 1);
 			if (!line.empty() ) {
 				transform(line.begin(), line.end(), line.begin(), ::toupper);	
 				switch (state) {

@@ -78,6 +78,7 @@ private:
 	void FinishWithNetworkError(string logMessage, unsigned int index);
 	int ProcessHLRCommand(unsigned int index, string &errDescription);
 	bool HLRIgnoredMessage(string message);
+	bool HLRMessageToRetry(string message);
 	string GetWinsockError();
 };
 

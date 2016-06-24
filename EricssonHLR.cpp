@@ -34,7 +34,7 @@ __declspec (dllexport) int __stdcall InitService(char* szInitParams, char* szRes
 			strncpy_s(szResult, MAX_DMS_RESPONSE_LEN, errDescription.c_str(), errDescription.length() + 1);
 			return INIT_FAIL;
 		}
-		logWriter.Write("***** Starting Ericsson HLR driver *****");
+		logWriter.Write("***** Starting Ericsson HLR driver v2.0 (multithreaded) *****");
 		logWriter.Write(string("Original init string: ") + string(szInitParams));
 		logWriter.Write(string("Parsed init params: "));
 		logWriter.Write(string("   Host: ") + config.m_hostName);

@@ -3,6 +3,7 @@
 #include <chrono>
 #include <thread>
 #include <string>
+//#include <set>
 #include <Winsock2.h>
 #include <windows.h>
 //#innclude <boost/noncopyable.hpp>
@@ -346,12 +347,25 @@ void ConnectionPool::FinishWithNetworkError(string logMessage, unsigned int inde
 	m_condVars[index].notify_one();
 }
 
+
 bool ConnectionPool::HLRIgnoredMessage(string message)
 {
-	// TODO: add analyzis
+	for (auto it : m_config.m_ignoredHLRMessages) {
+		if (message.find(it) != string::npos)
+			return true;
+	}
 	return false;
 }
 
+
+bool ConnectionPool::HLRMessageToRetry(string message)
+{
+	for (auto it : m_config.m_retryHLRMessages) {
+		if (message.find(it) != string::npos)
+			return true;
+	}
+	return false;
+}
 
 int ConnectionPool::ProcessHLRCommand(unsigned int index, string& errDescription)
 {
@@ -421,14 +435,17 @@ int ConnectionPool::ProcessHLRCommand(unsigned int index, string& errDescription
 						recvBuf[bytesRecv] = STR_TERMINATOR;
 						if (m_config.m_debugMode > 0)
 							logWriter.Write(string("HLR response: ") + recvBuf, index);
+						_strupr_s(recvBuf, receiveBufferSize);
 						strncat_s(hlrResponse, receiveBufferSize, recvBuf, bytesRecv + 1);
 
 						// check HLR ignored message list
 						if (strstr(hlrResponse, "EXECUTED") || HLRIgnoredMessage(hlrResponse)) {
+							if (m_config.m_debugMode > 0 && HLRIgnoredMessage(hlrResponse))
+								logWriter.Write(string("HLR ignored message found"), index);
 							errDescription = "Successful execution.";
 							return OPERATION_SUCCESS;
 						}
-
+						
 						if (char* p = strstr(hlrResponse, "NOT ACCEPTED")) {
 							p += strlen("NOT ACCEPTED");
 							p += strspn(p, " ;\r\n");
@@ -445,7 +462,7 @@ int ConnectionPool::ProcessHLRCommand(unsigned int index, string& errDescription
 
 							p[MAX_DMS_RESPONSE_LEN] = STR_TERMINATOR;
 							errDescription = string(p);
-							return CMD_NOTEXECUTED;
+							return (HLRMessageToRetry(hlrResponse) ? TRY_LATER : CMD_NOTEXECUTED);
 						}
 
 						if (strstr(hlrResponse, m_tasks[index].c_str())
