@@ -30,6 +30,7 @@ private:
 	vector<thread> m_threads;
 	bool m_connected[MAX_THREADS];
 	atomic_bool m_busy[MAX_THREADS];
+	atomic_int m_lastUsed;
 	bool m_finished[MAX_THREADS];
 	condition_variable m_condVars[MAX_THREADS];
 	mutex m_mutexes[MAX_THREADS];

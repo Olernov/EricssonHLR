@@ -24,6 +24,7 @@ extern LogWriter logWriter;
 ConnectionPool::ConnectionPool() :
 	m_stopFlag(false)
 {
+	m_lastUsed.store(0);
 }
 
 
@@ -549,17 +550,22 @@ bool ConnectionPool::TryAcquire(unsigned int& index)
 
 	time_t startTime;
 	time(&startTime);
+	bool firstCycle = true;
 	while (true) {
-		for (int i = 0; i < m_config.m_numThreads; ++i) {
+		// Start looping from last used connection + 1 to ensure consequent connections using and 
+		// to avoid suspending rarely used connections
+		for (int i = (firstCycle ? ((m_lastUsed + 1) %  m_config.m_numThreads) : 0); i < m_config.m_numThreads; ++i) {
 			bool oldValue = m_busy[i];
 			if (!oldValue) {
 				if (m_busy[i].compare_exchange_weak(oldValue, true)) {
 					index = i;
 					m_finished[i] = false;
+					m_lastUsed.store(i);
 					return true;
 				}
 			}
 		}
+		firstCycle = false;
 		++cycleCounter;
 		if (cycleCounter > 1000) {
 			// check time elapsed

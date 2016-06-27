@@ -44,6 +44,7 @@ __declspec (dllexport) int __stdcall InitService(char* szInitParams, char* szRes
 		logWriter.Write(string("   Domain: ") + config.m_domain);
 		logWriter.Write(string("   Log path: ") + config.m_logPath);
 		logWriter.Write(string("   Ignored HLR messages file: ") + config.m_ignoredMsgFilename);
+		logWriter.Write(string("   Number of threads: ") + to_string(config.m_numThreads));
 		logWriter.Write(string("   Debug mode: ") + to_string(config.m_debugMode));
 
 		if(!connectionPool.Initialize(config, errDescription)) {
@@ -113,6 +114,7 @@ __declspec (dllexport) int __stdcall ExecuteCommand(char **pParam, int nParamCou
 
 __declspec (dllexport) int __stdcall DeInitService(char* szResult)
 {
+	logWriter << "DeInitService called. Closing connections and stopping.";
 	connectionPool.Close();
 	logWriter.Stop();
 	return OPERATION_SUCCESS;
