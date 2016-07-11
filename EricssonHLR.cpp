@@ -150,7 +150,8 @@ void TestCommandSender(int index, int commandsNum, int minSleepTime)
 	for (int i = 0; i < commandsNum; ++i) {
 		char* task = new char[50];
 		char* result = new char[MAX_DMS_RESPONSE_LEN];
-		sprintf_s(task, 50, "HGSDC:MSISDN=79047186560,SUD=CLIP-%d;", rand() % 5, index * 10 + i);
+		//sprintf_s(task, 50, "HGSDC:MSISDN=79047186560,SUD=CLIP-%d;", rand() % 5, index * 10 + i);
+		sprintf_s(task, 50, "HGSDP:MSISDN=79047172074,ALL;", rand() % 5, index * 10 + i);
 		result[0] = '\0';
 		int res;
 		res = ExecuteCommand(&task, NUM_OF_EXECUTE_COMMAND_PARAMS, result);
@@ -158,8 +159,8 @@ void TestCommandSender(int index, int commandsNum, int minSleepTime)
 			//cout << "ExecuteCommand res: " << res << ". " << result << endl;
 		//}
 		this_thread::sleep_for(std::chrono::seconds(minSleepTime + rand() % 3));
-		delete task;
-		delete result;
+		delete [] task;
+		delete [] result;
 	}
 }
 

@@ -496,7 +496,7 @@ int ConnectionPool::ProcessHLRCommand(unsigned int index, string& errDescription
 		else {
 			if (m_config.m_debugMode > 0)
 				logWriter.Write("ExecuteCommand: socket time-out", index);
-			if (strlen(hlrResponse)) {
+			if (strlen(hlrResponse) > 0) {
 				errDescription = string("Unable to parse HLR response:\n") + hlrResponse;
 				return CMD_UNKNOWN;
 			}
@@ -588,7 +588,13 @@ int ConnectionPool::ExecCommand(unsigned int index, char* pTask, char* pResult)
 	while(!m_finished[index])
 		m_condVars[index].wait(locker);
 	int resultCode = m_resultCodes[index];
-	strncpy_s(pResult, MAX_DMS_RESPONSE_LEN, m_results[index].c_str(), m_results[index].length() + 1);
+	if (m_config.m_debugMode > 0) {
+		logWriter.Write("response length: " + to_string(m_results[index].length()), index);
+	}
+	strncpy_s(pResult, MAX_DMS_RESPONSE_LEN, m_results[index].c_str(), _TRUNCATE);
+	if (m_config.m_debugMode > 0) {
+		logWriter.Write("result length: " + to_string(strlen(pResult)), index);
+	}
 	m_busy[index] = false;
 	return resultCode;
 }

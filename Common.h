@@ -2,7 +2,7 @@
 
 #define MAIN_THREAD_NUM						-1
 #define MAX_THREADS							16
-#define MAX_DMS_RESPONSE_LEN				1024
+#define MAX_DMS_RESPONSE_LEN				1000
 #define ERROR_INIT_PARAMS					-1
 #define INIT_FAIL							-2
 #define ERROR_CMD_TOO_LONG					-3
