@@ -391,10 +391,10 @@ int ConnectionPool::ProcessHLRCommand(unsigned int index, string& errDescription
 		TelnetParse((unsigned char*) recvBuf, &bytesRecv, m_sockets[index]);
 		recvBuf[bytesRecv]='\0';
 		if (m_config.m_debugMode > 0) 
-			logWriter.Write(string("HLR response: ") + recvBuf);
+			logWriter.Write(string("HLR initiated response: ") + recvBuf, index);
 		_strupr_s(recvBuf, receiveBufferSize);
-		if(strstr(recvBuf,"TIME OUT")) {
-			logWriter.Write("Time-out report from HLR, restoring connection ...", index);
+		if(strstr(recvBuf, "TIME OUT") || strstr(recvBuf, "CONNECTION INTERRUPTED")) {
+			logWriter.Write("TIME OUT or CONNECTION INTERRUPTED report from HLR, restoring connection ...", index);
 			sprintf_s(sendBuf, sendBufferSize, "\r\n");
 			if(send(m_sockets[index],(char*) sendBuf, strlen(sendBuf), 0) == SOCKET_ERROR) {
 				errDescription = "Socket error when sending restore connection message" + GetWinsockError();
