@@ -126,8 +126,6 @@ BOOL WINAPI DllMain(HINSTANCE hinstDLL,  DWORD fdwReason,  LPVOID lpvReserved)
 	switch ( fdwReason )
 	{
 		case DLL_PROCESS_ATTACH:
-			//InitializeCriticalSection(&csSocket);
-			//InitializeCriticalSection(&csLogFile);
 			break;
 		case DLL_THREAD_ATTACH:
 			// A process is creating a new thread.
@@ -136,8 +134,6 @@ BOOL WINAPI DllMain(HINSTANCE hinstDLL,  DWORD fdwReason,  LPVOID lpvReserved)
 			// A thread exits normally.
 			break;
 		case DLL_PROCESS_DETACH:
-			//DeleteCriticalSection(&csSocket);
-			//DeleteCriticalSection(&csLogFile);
 		break;
 	}
 	return TRUE;

@@ -390,8 +390,7 @@ int ConnectionPool::ProcessHLRCommand(unsigned int index, string& errDescription
 	if(bytesRecv > 0) {
 		TelnetParse((unsigned char*) recvBuf, &bytesRecv, m_sockets[index]);
 		recvBuf[bytesRecv]='\0';
-		if (m_config.m_debugMode > 0) 
-			logWriter.Write(string("HLR initiated response: ") + recvBuf, index);
+		logWriter.Write(string("HLR initiated response: ") + recvBuf, index);
 		_strupr_s(recvBuf, receiveBufferSize);
 		if(strstr(recvBuf, "TIME OUT") || strstr(recvBuf, "CONNECTION INTERRUPTED")) {
 			logWriter.Write("TIME OUT or CONNECTION INTERRUPTED report from HLR, restoring connection ...", index);
