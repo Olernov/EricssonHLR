@@ -6,10 +6,17 @@
 #include <mutex>
 #include <exception>
 #include <stdexcept>
+#include <atomic>
 #include <boost/lockfree/queue.hpp>
 #include "Common.h"
 
-//using namespace std;
+
+enum LogLevel
+{
+    debug = 0,
+    notice = 1,
+    error = 2
+};
 
 class LogWriterException 
 {
@@ -36,25 +43,29 @@ class LogWriter
 {
 public:
 	LogWriter();
-	~LogWriter();
-	bool Initialize(const std::string& logPath, std::string& errDescription);
-	bool Write(std::string message, short threadIndex = MAIN_THREAD_NUM);
-	bool Write(const LogMessage&);
-	void operator<<(const std::string&);
+    ~LogWriter();
+    bool Initialize(const std::string& logPath, const std::string& namePrefix, LogLevel logLevel = notice);
+    bool Write(std::string message, short threadIndex = mainThreadIndex, LogLevel msgLevel = notice);
+	
+    void operator<<(const std::string&);
 	inline std::exception_ptr GetException() { return m_excPointer; }
 	void ClearException();
-	bool Stop();
 private:
 	static const int queueSize = 128;
-	static const int sleepWhenQueueEmpty = 0;
-	std::exception_ptr m_excPointer;
+    const int sleepWhenQueueEmpty = 3;
+	static const int maxPath = 1000;
+    LogLevel logLevel;
 	std::string m_logPath;
+	std::string m_namePrefix;
 	boost::lockfree::queue<LogMessage*> messageQueue;
 	std::atomic<bool> m_stopFlag;
 	std::thread m_writeThread;
 	std::mutex m_exceptionMutex;
-	std::ofstream m_logStream;
+    std::ofstream m_logStream;
 	std::string m_logFileDate;
-	void WriteThreadFunction();
-	void CheckLogFile(time_t messageTime);
+    std::exception_ptr m_excPointer;
+
+    void WriteThreadFunction();
+    bool Write(LogMessage*);
+    void SetLogStream(time_t messageTime);
 };

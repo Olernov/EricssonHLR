@@ -30,7 +30,7 @@ __declspec (dllexport) int __stdcall InitService(char* szInitParams, char* szRes
 				return ERROR_INIT_PARAMS;
 			}
 		}
-		if (!logWriter.Initialize(config.m_logPath, errDescription)) {
+		if (!logWriter.Initialize(config.m_logPath, "EricssonHLR")) {
 			strncpy_s(szResult, MAX_DMS_RESPONSE_LEN, errDescription.c_str(), errDescription.length() + 1);
 			return INIT_FAIL;
 		}
@@ -49,7 +49,6 @@ __declspec (dllexport) int __stdcall InitService(char* szInitParams, char* szRes
 
 		if(!connectionPool.Initialize(config, errDescription)) {
 			logWriter.Write("Unable to set up connection to given host: " + errDescription);
-			logWriter.Stop();
 			strncpy_s(szResult, MAX_DMS_RESPONSE_LEN, errDescription.c_str(), errDescription.length() + 1);
 			return ERROR_INIT_PARAMS;
 		}
@@ -57,14 +56,12 @@ __declspec (dllexport) int __stdcall InitService(char* szInitParams, char* szRes
 	catch(LogWriterException& e) {
 		strncpy_s(szResult, MAX_DMS_RESPONSE_LEN, e.m_message.c_str(), e.m_message.length() + 1);
 		connectionPool.Close();
-		logWriter.Stop();
 		return INIT_FAIL;
 	}
 	catch(std::exception& e)	{
 		//const char* pmessage = "Exception caught while trying to initialize.";
 		strncpy_s(szResult, MAX_DMS_RESPONSE_LEN, e.what(), strlen(e.what()) +1);
 		connectionPool.Close();
-		logWriter.Stop();
 		return INIT_FAIL;
 	}
 	return OPERATION_SUCCESS;
@@ -116,7 +113,6 @@ __declspec (dllexport) int __stdcall DeInitService(char* szResult)
 {
 	logWriter << "DeInitService called. Closing connections and stopping.";
 	connectionPool.Close();
-	logWriter.Stop();
 	return OPERATION_SUCCESS;
 }
 
@@ -146,14 +142,20 @@ void TestCommandSender(int index, int commandsNum, int minSleepTime)
 	for (int i = 0; i < commandsNum; ++i) {
 		char* task = new char[50];
 		char* result = new char[MAX_DMS_RESPONSE_LEN];
-		//sprintf_s(task, 50, "HGSDC:MSISDN=79047186560,SUD=CLIP-%d;", rand() % 5, index * 10 + i);
-		sprintf_s(task, 50, "HGSDP:MSISDN=79047172074,ALL;", rand() % 5, index * 10 + i);
+		switch (i % 3) {
+		case 0:
+			sprintf_s(task, 50, "HGSDC:MSISDN=79047186560,SUD=CLIP-%d;", rand() % 5);
+			break;
+		case 1:
+			sprintf_s(task, 50, "HGSDP:MSISDN=79047172074,LOC;");
+			break;
+		case 2:
+			sprintf_s(task, 50, "MGSSP:IMSI=250270100520482;");
+			break;
+		}
 		result[0] = '\0';
 		int res;
 		res = ExecuteCommand(&task, NUM_OF_EXECUTE_COMMAND_PARAMS, result);
-		//if(res != OPERATION_SUCCESS) {
-			//cout << "ExecuteCommand res: " << res << ". " << result << endl;
-		//}
 		this_thread::sleep_for(std::chrono::seconds(minSleepTime + rand() % 3));
 		delete [] task;
 		delete [] result;

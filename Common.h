@@ -1,6 +1,5 @@
 #pragma once
 
-#define MAIN_THREAD_NUM						-1
 #define MAX_THREADS							16
 #define MAX_DMS_RESPONSE_LEN				1000
 #define ERROR_INIT_PARAMS					-1
@@ -16,3 +15,5 @@
 #define SOCKET_TIMEOUT_SEC					10
 
 #define NUM_OF_EXECUTE_COMMAND_PARAMS		1
+
+const int mainThreadIndex = -1;
