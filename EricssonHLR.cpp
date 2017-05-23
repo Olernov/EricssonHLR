@@ -30,7 +30,7 @@ __declspec (dllexport) int __stdcall InitService(char* szInitParams, char* szRes
 				return ERROR_INIT_PARAMS;
 			}
 		}
-		if (!logWriter.Initialize(config.m_logPath, "EricssonHLR")) {
+		if (!logWriter.Initialize(config.m_logPath, "EricssonHLR"), config.m_debugMode > 0 ? debug : notice) {
 			strncpy_s(szResult, MAX_DMS_RESPONSE_LEN, errDescription.c_str(), errDescription.length() + 1);
 			return INIT_FAIL;
 		}
@@ -147,7 +147,7 @@ void TestCommandSender(int index, int commandsNum, int minSleepTime)
 			sprintf_s(task, 50, "HGSDC:MSISDN=79047186560,SUD=CLIP-%d;", rand() % 5);
 			break;
 		case 1:
-			sprintf_s(task, 50, "HGSDP:MSISDN=79047172074,LOC;");
+			sprintf_s(task, 50, "HGSDC:MSISDN=79047172074,LOC;");
 			break;
 		case 2:
 			sprintf_s(task, 50, "MGSSP:IMSI=250270100520482;");
@@ -193,11 +193,13 @@ int main(int argc, char* argv[])
 	cout << "*****************************" << endl;
 	cout << "Multithreaded test PASSED. Check log file written at logpath." << endl;
 
-	cout << "Running reconnect test ..." << endl;
-	thread reconnectTest(TestCommandSender, 0, 3, 310);
-	reconnectTest.join();
-	cout << "*****************************" << endl;
-	cout << "Reconnect test PASSED. Check log file. There must be a message like \"Restoring connection\"" << endl;
+	if (argc >= 3 && !_strnicmp(argv[2], "-reconnect", 10)) {
+		cout << "Running reconnect test ..." << endl;
+		thread reconnectTest(TestCommandSender, 0, 3, 310);
+		reconnectTest.join();
+		cout << "*****************************" << endl;
+		cout << "Reconnect test PASSED. Check log file. There must be a message like \"Restoring connection\"" << endl;
+	}
 
 	int deinitRes;
 	char deinitResDescription[MAX_DMS_RESPONSE_LEN];

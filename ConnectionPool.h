@@ -12,6 +12,7 @@ using namespace std;
 #define STR_TERMINATOR				'\0'
 #define CR_CHAR_CODE				'\r'
 #define LF_CHAR_CODE				'\n'
+#define HLR_PROMPT					"\x03<"
 
 class ConnectionPool
 {
@@ -80,6 +81,7 @@ private:
 	int ProcessHLRCommand(unsigned int index, string &errDescription);
 	bool HLRIgnoredMessage(string message);
 	bool HLRMessageToRetry(string message);
+	void StripHLRResponse(char* start, std::string& result);
 	string GetWinsockError();
 };
 

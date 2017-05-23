@@ -67,7 +67,7 @@
     <LinkIncremental>false</LinkIncremental>
     <LibraryPath>$(VC_LibraryPath_x86);$(WindowsSDK_LibraryPath_x86); c:\Projects\boost_1_61_0\lib32-msvc-12.0\;</LibraryPath>
     <ExecutablePath>$(VC_ExecutablePath_x86);$(WindowsSDK_ExecutablePath);$(VS_ExecutablePath);$(MSBuild_ExecutablePath);$(SystemRoot)\SysWow64;$(FxCopDir);$(PATH); c:\Projects\boost_1_61_0\lib32-msvc-12.0\</ExecutablePath>
-    <OutDir>y:\IRBiS\Temp\HLR\</OutDir>
+    <OutDir>y:\IRBiS\DMS\Ericsson</OutDir>
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <ClCompile>

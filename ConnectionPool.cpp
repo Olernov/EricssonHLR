@@ -100,7 +100,7 @@ bool ConnectionPool::ConnectSocket(unsigned int index, string& errDescription)
 
 bool ConnectionPool::LoginToHLR(unsigned int index, string& errDescription)
 {
-	fd_set read_set, error_set;
+	fd_set read_set;
     struct timeval tv;
 	int bytesRecv = 0;
 	char recvbuf[receiveBufferSize];
@@ -118,14 +118,8 @@ bool ConnectionPool::LoginToHLR(unsigned int index, string& errDescription)
 			tv.tv_sec = 1;
 			tv.tv_usec = 0;
 			FD_ZERO( &read_set );
-			FD_ZERO( &error_set );
 			FD_SET( m_sockets[index], &read_set );
-			FD_SET( m_sockets[index], &error_set );
-			if (select( m_sockets[index] + 1, &read_set, NULL, &error_set, &tv ) != 0 ) {
-				if (FD_ISSET(m_sockets[index], &error_set )) {
-					errDescription = "LoginToHLR: Error on socket" + GetWinsockError();
-					return false;
-				}
+			if (select( m_sockets[index] + 1, &read_set, NULL, NULL, &tv ) != 0 ) {
 				// check for message
 				if (FD_ISSET( m_sockets[index], &read_set))  {
 					// receive some data from server
@@ -141,7 +135,7 @@ bool ConnectionPool::LoginToHLR(unsigned int index, string& errDescription)
 							if (m_config.m_debugMode > 0) 
 								logWriter.Write("LoginToHLR: HLR response: " + string(recvbuf), index+1);
 							_strupr_s(recvbuf, receiveBufferSize);
-							if(strstr(recvbuf, "USERCODE:")) {
+							if(strstr(recvbuf, "LOGIN:")) {
 								// server asks for login
 								if (m_config.m_debugMode > 0) 
 									logWriter.Write("Sending username: " + m_config.m_username);
@@ -176,7 +170,19 @@ bool ConnectionPool::LoginToHLR(unsigned int index, string& errDescription)
 								}
 								continue;
 							}
-							if(strstr(recvbuf,"\x03<")) {
+
+							if(strstr(recvbuf,"TERMINAL TYPE?")) {
+								// server asks for domain
+								if (m_config.m_debugMode > 0) 
+									logWriter.Write("Sending terminal type: vt100", index+1);
+								sprintf_s((char*)sendbuf, sendBufferSize, "vt100\r\n");
+								if(send( m_sockets[index], sendbuf,strlen(sendbuf), 0 )==SOCKET_ERROR) {
+									errDescription = "Error sending data on socket" + GetWinsockError();
+									return false;
+								}
+								continue;
+							}
+							if(strstr(recvbuf, HLR_PROMPT)) {
 								return true;
 							}
 							if(strstr(recvbuf, "AUTHORIZATION FAILURE")) {
@@ -406,21 +412,15 @@ int ConnectionPool::ProcessHLRCommand(unsigned int index, string& errDescription
 		errDescription = "Socket error when sending command" + GetWinsockError();
 		return TRY_LATER;
 	}
-	fd_set read_set, error_set;
+	fd_set read_set;
 	struct timeval tv;
 	hlrResponse[0] = STR_TERMINATOR;
 	while (!m_finished[index]) {
 		tv.tv_sec = SOCKET_TIMEOUT_SEC;
 		tv.tv_usec = 0;
 		FD_ZERO(&read_set);
-		FD_ZERO(&error_set);
 		FD_SET(m_sockets[index], &read_set);
-		FD_SET(m_sockets[index], &error_set);
-		if (select(m_sockets[index] + 1, &read_set, NULL, &error_set, &tv) != 0) {
-			if (FD_ISSET(m_sockets[index], &error_set)) {
-				errDescription = "Socket error when calling FD_ISSET" + GetWinsockError();
-				return TRY_LATER;
-			}
+		if (select(m_sockets[index] + 1, &read_set, NULL, NULL, &tv) != 0) {
 			// check for message
 			if (FD_ISSET(m_sockets[index], &read_set)) {
 				// receive some data from server
@@ -448,29 +448,17 @@ int ConnectionPool::ProcessHLRCommand(unsigned int index, string& errDescription
 						
 						if (char* p = strstr(hlrResponse, "NOT ACCEPTED")) {
 							p += strlen("NOT ACCEPTED");
-							p += strspn(p, " ;\r\n");
-
-							// remove spaces, \r and \n at the end of string
-							char* p2 = hlrResponse + strlen(hlrResponse) - 1;
-							while (p2 > p && (*p2 == ' ' || *p2 == '\r' || *p2 == '\n' || *p2 == '\t'))
-								p2--;
-							if (p2 > p  &&  p2 < hlrResponse + strlen(hlrResponse) - 1) *(p2 + 1) = '\0';
-
-							// replace \r and \n with spaces 
-							for (char* p3 = p; p3 < p2; p3++)
-								if (*p3 == '\r' || *p3 == '\n') *p3 = ' ';
-
-							p[MAX_DMS_RESPONSE_LEN] = STR_TERMINATOR;
-							errDescription = string(p);
+							StripHLRResponse(p, errDescription);
 							return (HLRMessageToRetry(hlrResponse) ? TRY_LATER : CMD_NOTEXECUTED);
 						}
 
 						if (strstr(hlrResponse, m_tasks[index].c_str())
-								&& !strcmp(hlrResponse + strlen(hlrResponse) - 2, "\x03<")) {
+								&& !strcmp(hlrResponse + strlen(hlrResponse) - 2, HLR_PROMPT)) {
 							// if HLR answers with echo and prompt then send ';'
 							if (m_config.m_debugMode > 0) 
-								logWriter.Write("Command echo received. Sending ';' ...", index);
-							if (send(m_sockets[index], ";\r\n", 3, 0) == SOCKET_ERROR) {
+								logWriter.Write("Command echo received. Sending CRLF ...", index);
+							const char* crlf = "\r\n";
+							if (send(m_sockets[index], crlf, strlen(crlf), 0) == SOCKET_ERROR) {
 								errDescription = "Socket error when sending data" + GetWinsockError();
 								return TRY_LATER;
 							}
@@ -506,6 +494,31 @@ int ConnectionPool::ProcessHLRCommand(unsigned int index, string& errDescription
 		}
 	}
 	return OPERATION_SUCCESS;
+}
+
+void ConnectionPool::StripHLRResponse(char* start, std::string& result)
+{
+	start += strspn(start, " ;\r\n");
+	// remove spaces, \r and \n at the end of string
+	char* responseEnd = start + strlen(start) - 1;
+	char* end = responseEnd;
+	while (end > start && (*end == ' ' || *end == '\r' || *end == '\n' || *end == '\t')) {
+		end--;
+	}
+	if ((end > start) && (end < responseEnd)) {
+		*(end + 1) = STR_TERMINATOR;
+	}
+
+	// replace \r and \n with spaces 
+	for (char* p3 = start; p3 < end; p3++) {
+		if (*p3 == '\r' || *p3 == '\n') {
+			*p3 = ' ';
+		}
+	}
+	if (!strcmp(start + strlen(start) - 2, HLR_PROMPT)) {
+		start[strlen(start) - 2] = STR_TERMINATOR;
+	}
+	result = start;
 }
 
 
