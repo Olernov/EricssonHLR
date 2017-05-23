@@ -13,6 +13,7 @@ using namespace std;
 #define CR_CHAR_CODE				'\r'
 #define LF_CHAR_CODE				'\n'
 #define HLR_PROMPT					"\x03<"
+#define TERMINAL_TYPE				"vt100"
 
 class ConnectionPool
 {

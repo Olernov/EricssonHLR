@@ -146,7 +146,6 @@ bool ConnectionPool::LoginToHLR(unsigned int index, string& errDescription)
 								}
 								continue;
 							}
-
 							if(strstr(recvbuf,"PASSWORD:")) {
 								// server asks for password
 								if (m_config.m_debugMode > 0) 
@@ -158,7 +157,6 @@ bool ConnectionPool::LoginToHLR(unsigned int index, string& errDescription)
 								}
 								continue;
 							}
-
 							if(strstr(recvbuf,"DOMAIN:")) {
 								// server asks for domain
 								if (m_config.m_debugMode > 0) 
@@ -170,13 +168,12 @@ bool ConnectionPool::LoginToHLR(unsigned int index, string& errDescription)
 								}
 								continue;
 							}
-
 							if(strstr(recvbuf,"TERMINAL TYPE?")) {
-								// server asks for domain
+								// server asks for terminal type
 								if (m_config.m_debugMode > 0) 
-									logWriter.Write("Sending terminal type: vt100", index+1);
-								sprintf_s((char*)sendbuf, sendBufferSize, "vt100\r\n");
-								if(send( m_sockets[index], sendbuf,strlen(sendbuf), 0 )==SOCKET_ERROR) {
+									logWriter.Write(std::string("Sending terminal type: ") + TERMINAL_TYPE, index+1);
+								sprintf_s((char*)sendbuf, sendBufferSize, "%s\r\n", TERMINAL_TYPE);
+								if(send( m_sockets[index], sendbuf, strlen(sendbuf), 0 )==SOCKET_ERROR) {
 									errDescription = "Error sending data on socket" + GetWinsockError();
 									return false;
 								}
