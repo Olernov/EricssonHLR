@@ -9,7 +9,7 @@
 #define CMD_UNKNOWN							-30
 #define EXCEPTION_CAUGHT					-999
 #define OPERATION_SUCCESS					0
-#define TRY_LATER							-33333
+#define TRY_LATER							-333333
 #define MAX_COMMAND_LEN						1020
 
 #define SOCKET_TIMEOUT_SEC					10

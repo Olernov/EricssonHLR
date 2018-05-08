@@ -119,7 +119,12 @@ bool ConnectionPool::LoginToHLR(unsigned int index, string& errDescription)
 			tv.tv_usec = 0;
 			FD_ZERO( &read_set );
 			FD_SET( m_sockets[index], &read_set );
-			if (select( m_sockets[index] + 1, &read_set, NULL, NULL, &tv ) != 0 ) {
+			int selectRes = select(m_sockets[index] + 1, &read_set, NULL, NULL, &tv);
+			if ( selectRes != 0 ) {
+				if (selectRes == SOCKET_ERROR) {
+					errDescription = "LoginToHLR: socket error while select" + GetWinsockError();
+					return false;
+				}
 				// check for message
 				if (FD_ISSET( m_sockets[index], &read_set))  {
 					// receive some data from server
@@ -404,7 +409,7 @@ int ConnectionPool::ProcessHLRCommand(unsigned int index, string& errDescription
 			}
 		}
 	}
-	sprintf_s(sendBuf, sendBufferSize, "%s\r\n", m_tasks[index]);
+	sprintf_s(sendBuf, sendBufferSize, "%s\r\n", m_tasks[index].c_str());
 	if(send(m_sockets[index], (char*) sendBuf, strlen(sendBuf), 0) == SOCKET_ERROR) {
 		errDescription = "Socket error when sending command" + GetWinsockError();
 		return TRY_LATER;
@@ -417,7 +422,13 @@ int ConnectionPool::ProcessHLRCommand(unsigned int index, string& errDescription
 		tv.tv_usec = 0;
 		FD_ZERO(&read_set);
 		FD_SET(m_sockets[index], &read_set);
-		if (select(m_sockets[index] + 1, &read_set, NULL, NULL, &tv) != 0) {
+
+		int selectRes = select(m_sockets[index] + 1, &read_set, NULL, NULL, &tv);
+		if ( selectRes != 0 ) {
+			if (selectRes == SOCKET_ERROR) {
+				errDescription = "LoginToHLR: socket error while select" + GetWinsockError();
+				return TRY_LATER;
+			}
 			// check for message
 			if (FD_ISSET(m_sockets[index], &read_set)) {
 				// receive some data from server
@@ -452,10 +463,10 @@ int ConnectionPool::ProcessHLRCommand(unsigned int index, string& errDescription
 						if (strstr(hlrResponse, m_tasks[index].c_str())
 								&& !strcmp(hlrResponse + strlen(hlrResponse) - 2, HLR_PROMPT)) {
 							// if HLR answers with echo and prompt then send ';'
-							if (m_config.m_debugMode > 0) 
-								logWriter.Write("Command echo received. Sending CRLF ...", index);
-							const char* crlf = "\r\n";
-							if (send(m_sockets[index], crlf, strlen(crlf), 0) == SOCKET_ERROR) {
+							if (m_config.m_debugMode > 0)
+								logWriter.Write("Command echo received. Sending ;CRLF ...", index);
+							const char* continueCmd = ";\r\n";
+							if (send(m_sockets[index], continueCmd, strlen(continueCmd), 0) == SOCKET_ERROR) {
 								errDescription = "Socket error when sending data" + GetWinsockError();
 								return TRY_LATER;
 							}

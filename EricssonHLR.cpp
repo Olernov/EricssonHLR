@@ -1,9 +1,7 @@
 // EricssonHLR.cpp : Defines the entry point for the console application.
 //
 
- //#define _CRT_SECURE_NO_WARNINGS
-
-#include <time.h>
+ #include <time.h>
 #include <stdarg.h>
 #include <Winsock2.h>
 #include "Common.h"
