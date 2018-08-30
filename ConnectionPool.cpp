@@ -98,124 +98,161 @@ bool ConnectionPool::ConnectSocket(unsigned int index, string& errDescription)
 }
 
 
+
 bool ConnectionPool::LoginToHLR(unsigned int index, string& errDescription)
 {
 	fd_set read_set;
+	fd_set write_set;
+	fd_set except_set;
     struct timeval tv;
 	int bytesRecv = 0;
 	char recvbuf[receiveBufferSize];
-	char sendbuf[sendBufferSize]; 
+	
 	char response[receiveBufferSize];
-	int nAttemptCounter = 0;
+	response[0] = STR_TERMINATOR;
+	int nCurrentLoginStepsCount = 0;
+	const int MAX_STEPS_OF_LOGIN_PROCEDURE = 30;
 
-	while(nAttemptCounter < 10) {
-		if(m_config.m_debugMode > 0) 
-			logWriter.Write("Login attempt " + to_string(nAttemptCounter+1), index+1);
+	while(nCurrentLoginStepsCount++ < MAX_STEPS_OF_LOGIN_PROCEDURE) {
+		tv.tv_sec = 1;
+		tv.tv_usec = 0;
+		FD_ZERO( &read_set );
+		FD_ZERO( &write_set );
+		FD_ZERO( &except_set );
+		FD_SET( m_sockets[index], &read_set );
+		int selectRes = select(m_sockets[index] + 1, &read_set, &write_set, &except_set, &tv);
+		if ( selectRes == 0 ) {
+			if (m_config.m_debugMode > 0) {
+				logWriter.Write("LoginToHLR: select time-out", index + 1);
+			}
+			continue; // next attempt
+		}
 		
-		response[0] = STR_TERMINATOR;
-
-		while(true) {
-			tv.tv_sec = 1;
-			tv.tv_usec = 0;
-			FD_ZERO( &read_set );
-			FD_SET( m_sockets[index], &read_set );
-			int selectRes = select(m_sockets[index] + 1, &read_set, NULL, NULL, &tv);
-			if ( selectRes != 0 ) {
-				if (selectRes == SOCKET_ERROR) {
-					errDescription = "LoginToHLR: socket error while select" + GetWinsockError();
-					return false;
-				}
-				// check for message
-				if (FD_ISSET( m_sockets[index], &read_set))  {
-					// receive some data from server
-					recvbuf[0] = STR_TERMINATOR;
-					if ((bytesRecv = recv( m_sockets[index], recvbuf, sizeof(recvbuf), 0 ) ) == SOCKET_ERROR)  {
-						errDescription = "LoginToHLR: Error receiving data from host" + GetWinsockError();
-						return false;
-					}
-					else {
-						TelnetParse((unsigned char*) recvbuf, &bytesRecv, m_sockets[index]);
-						if (bytesRecv>0) {
-							recvbuf[bytesRecv] = STR_TERMINATOR;
-							if (m_config.m_debugMode > 0) 
-								logWriter.Write("LoginToHLR: HLR response: " + string(recvbuf), index+1);
-							_strupr_s(recvbuf, receiveBufferSize);
-							if(strstr(recvbuf, "LOGIN:")) {
-								// server asks for login
-								if (m_config.m_debugMode > 0) 
-									logWriter.Write("Sending username: " + m_config.m_username);
-								sprintf_s((char*) sendbuf, sendBufferSize, "%s\r\n", m_config.m_username.c_str());
-								if(send( m_sockets[index], sendbuf, strlen(sendbuf), 0 ) == SOCKET_ERROR) {
-									errDescription = "Error sending data on socket" + GetWinsockError();
-									return false;
-								}
-								continue;
-							}
-							if(strstr(recvbuf,"PASSWORD:")) {
-								// server asks for password
-								if (m_config.m_debugMode > 0) 
-									logWriter.Write("Sending password: " + m_config.m_password, index+1);
-								sprintf_s((char*) sendbuf, sendBufferSize, "%s\r\n", m_config.m_password.c_str());
-								if(send(m_sockets[index], sendbuf, strlen(sendbuf), 0) == SOCKET_ERROR) {
-									errDescription = "Error sending data on socket" + GetWinsockError();
-									return false;
-								}
-								continue;
-							}
-							if(strstr(recvbuf,"DOMAIN:")) {
-								// server asks for domain
-								if (m_config.m_debugMode > 0) 
-									logWriter.Write("Sending domain: " + m_config.m_domain, index+1);
-								sprintf_s((char*)sendbuf, sendBufferSize, "%s\r\n", m_config.m_domain.c_str());
-								if(send( m_sockets[index], sendbuf,strlen(sendbuf), 0 )==SOCKET_ERROR) {
-									errDescription = "Error sending data on socket" + GetWinsockError();
-									return false;
-								}
-								continue;
-							}
-							if(strstr(recvbuf,"TERMINAL TYPE?")) {
-								// server asks for terminal type
-								if (m_config.m_debugMode > 0) 
-									logWriter.Write(std::string("Sending terminal type: ") + TERMINAL_TYPE, index+1);
-								sprintf_s((char*)sendbuf, sendBufferSize, "%s\r\n", TERMINAL_TYPE);
-								if(send( m_sockets[index], sendbuf, strlen(sendbuf), 0 )==SOCKET_ERROR) {
-									errDescription = "Error sending data on socket" + GetWinsockError();
-									return false;
-								}
-								continue;
-							}
-							if(strstr(recvbuf, HLR_PROMPT)) {
-								return true;
-							}
-							if(strstr(recvbuf, "AUTHORIZATION FAILURE")) {
-								errDescription = "LoginToHLR: authorization failure.";
-								return false;
-							}
-							if(strstr(recvbuf, "SUCCESS")) {
-								return true;
-							}
-							if(char* p=strstr(recvbuf,"ERR")) {
-								// cut info from response
-								size_t pos=strcspn(p,";\r\n");
-								*(p + pos) = STR_TERMINATOR;
-								errDescription =  "Unable to log in HLR: " + string(p);
-								return false;
-							}
-						}
-					}
-				}
+		if (selectRes == SOCKET_ERROR) {
+			errDescription = "LoginToHLR: socket error while select" + GetWinsockError();
+			return false;
+		}
+		// check for message
+		if (FD_ISSET( m_sockets[index], &read_set))  {
+			// receive some data from server
+			recvbuf[0] = STR_TERMINATOR;
+			if ((bytesRecv = recv( m_sockets[index], recvbuf, sizeof(recvbuf), 0 ) ) == SOCKET_ERROR)  {
+				errDescription = "LoginToHLR: Error receiving data from host" + GetWinsockError();
+				return false;
 			}
 			else {
-				if (m_config.m_debugMode > 0) 
-					logWriter.Write("LoginToHLR: select time-out", index+1);
-				nAttemptCounter++;
-				break;
+				auto result = ProcessNextLoginStep(index, recvbuf, bytesRecv, errDescription);
+				switch(result) {
+				case NextLoginStepResult::continues:
+					continue;
+				case NextLoginStepResult::succeeded:
+					return true;
+				case NextLoginStepResult::failed:
+					return false;
+				}
 			}
 		}
-
+		if (FD_ISSET(m_sockets[index], &write_set))  {
+			if (m_config.m_debugMode > 0) {
+				logWriter.Write("LoginToHLR: Unexpected socket state (check for writeability)", index + 1);
+				return false;
+			}
+		}
+		if (FD_ISSET(m_sockets[index], &except_set))  {
+			if (m_config.m_debugMode > 0) {
+				logWriter.Write("LoginToHLR: Unexpected socket state (check for errors)", index + 1);
+				return false;
+			}
+		}
+	}
+	if (m_config.m_debugMode > 0) {
+		logWriter.Write("LoginToHLR: Maximum steps allowed for login procedure exceeded", index + 1);
 	}
 	errDescription = "Unable to login to Ericsson HLR.";
 	return false;
+}
+
+
+ConnectionPool::NextLoginStepResult ConnectionPool::ProcessNextLoginStep(unsigned int index, char* recvbuf, int bytesRecv, 
+	string& errDescription)
+{
+	char sendbuf[sendBufferSize]; 
+	TelnetParse((unsigned char*)recvbuf, &bytesRecv, m_sockets[index]);
+	if (bytesRecv>0) {
+		recvbuf[bytesRecv] = STR_TERMINATOR;
+		if (m_config.m_debugMode > 0) {
+			logWriter.Write("LoginToHLR: HLR response: " + string(recvbuf), index + 1);
+		}
+		_strupr_s(recvbuf, receiveBufferSize);
+		if(strstr(recvbuf, "LOGIN:")) {
+			// server asks for login
+			if (m_config.m_debugMode > 0) {
+				logWriter.Write("Sending username: " + m_config.m_username);
+			}
+			sprintf_s((char*) sendbuf, sendBufferSize, "%s\r\n", m_config.m_username.c_str());
+			if(send( m_sockets[index], sendbuf, strlen(sendbuf), 0 ) == SOCKET_ERROR) {
+				errDescription = "Error sending data on socket" + GetWinsockError();
+				return NextLoginStepResult::failed;
+			}
+			return NextLoginStepResult::continues;
+		}
+		if(strstr(recvbuf,"PASSWORD:")) {
+			// server asks for password
+			if (m_config.m_debugMode > 0) {
+				logWriter.Write("Sending password: " + m_config.m_password, index + 1);
+			}
+
+			sprintf_s((char*) sendbuf, sendBufferSize, "%s\r\n", m_config.m_password.c_str());
+			if(send(m_sockets[index], sendbuf, strlen(sendbuf), 0) == SOCKET_ERROR) {
+				errDescription = "Error sending data on socket" + GetWinsockError();
+				return NextLoginStepResult::failed;
+			}
+			return NextLoginStepResult::continues;
+		}
+		if(strstr(recvbuf,"DOMAIN:")) {
+			// server asks for domain
+			if (m_config.m_debugMode > 0) {
+				logWriter.Write("Sending domain: " + m_config.m_domain, index + 1);
+			}
+			sprintf_s((char*)sendbuf, sendBufferSize, "%s\r\n", m_config.m_domain.c_str());
+			if(send( m_sockets[index], sendbuf,strlen(sendbuf), 0 )==SOCKET_ERROR) {
+				errDescription = "Error sending data on socket" + GetWinsockError();
+				return NextLoginStepResult::failed;
+			}
+			return NextLoginStepResult::continues;
+		}
+		if(strstr(recvbuf,"TERMINAL TYPE?")) {
+			// server asks for terminal type
+			if (m_config.m_debugMode > 0) 
+				logWriter.Write(std::string("Sending terminal type: ") + TERMINAL_TYPE, index+1);
+			sprintf_s((char*)sendbuf, sendBufferSize, "%s\r\n", TERMINAL_TYPE);
+			if(send( m_sockets[index], sendbuf, strlen(sendbuf), 0 )==SOCKET_ERROR) {
+				errDescription = "Error sending data on socket" + GetWinsockError();
+				return NextLoginStepResult::failed;
+			}
+			return NextLoginStepResult::continues;
+		}
+		if(strstr(recvbuf, HLR_PROMPT)) {
+			errDescription.clear();
+			return NextLoginStepResult::succeeded;
+		}
+		if(strstr(recvbuf, "AUTHORIZATION FAILURE")) {
+			errDescription = "LoginToHLR: authorization failure.";
+			return NextLoginStepResult::failed;
+		}
+		if(strstr(recvbuf, "SUCCESS")) {
+			errDescription.clear();
+			return NextLoginStepResult::succeeded;
+		}
+		if(char* p=strstr(recvbuf,"ERR")) {
+			// cut info from response
+			size_t pos=strcspn(p,";\r\n");
+			*(p + pos) = STR_TERMINATOR;
+			errDescription =  "Unable to log in HLR: " + string(p);
+			return NextLoginStepResult::failed;
+		}
+	}
+	return NextLoginStepResult::continues;
 }
 
 

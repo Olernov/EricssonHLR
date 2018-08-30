@@ -73,9 +73,17 @@ private:
 		TELNET_IAC = 255	/* Data Byte 255. */
 	};
 	
+	enum class NextLoginStepResult {
+		failed,
+		succeeded,
+		continues
+	};
+
 	void WorkerThread(unsigned int index);
 	bool ConnectSocket(unsigned int index, string& errDescription);
 	bool LoginToHLR(unsigned int index, string& errDescription);
+	NextLoginStepResult ProcessNextLoginStep(unsigned int index, char* recvbuf, int bytesRecv,
+		string& errDescription);
 	bool Reconnect(unsigned int index, string& errDescription);
 	void TelnetParse(unsigned char* recvbuf, int* bytesRecv, int socketFD);
 	void FinishWithNetworkError(string logMessage, unsigned int index);

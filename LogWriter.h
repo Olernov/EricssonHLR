@@ -43,7 +43,8 @@ class LogWriter
 {
 public:
 	LogWriter();
-    ~LogWriter();
+	~LogWriter();
+    void Finalize();
     bool Initialize(const std::string& logPath, const std::string& namePrefix, LogLevel logLevel = notice);
     bool Write(std::string message, short threadIndex = mainThreadIndex, LogLevel msgLevel = notice);
 	

@@ -14,6 +14,13 @@ LogWriter::LogWriter() 	:
 {
 }
 
+
+LogWriter::~LogWriter()
+{
+	Finalize();
+}
+
+
 bool LogWriter::Initialize(const std::string& logPath, const std::string& namePrefix, LogLevel level)
 {
     m_logPath = logPath;
@@ -24,6 +31,18 @@ bool LogWriter::Initialize(const std::string& logPath, const std::string& namePr
     SetLogStream(now);
 	m_writeThread = std::thread(&LogWriter::WriteThreadFunction, this);
 	return true;
+}
+
+
+void LogWriter::Finalize()
+{
+    m_stopFlag = true;
+	if (m_writeThread.joinable()) {
+		m_writeThread.join();
+	}
+	if (m_logStream.is_open()) {
+		m_logStream.close();
+	}
 }
 
 
@@ -122,10 +141,4 @@ void LogWriter::ClearException()
 	m_excPointer = nullptr;
 }
 
-LogWriter::~LogWriter()
-{
-    m_stopFlag = true;
-    if (m_writeThread.joinable())
-        m_writeThread.join();
-    m_logStream.close();
-}
+
