@@ -28,10 +28,13 @@ public:
 private:
 	static const int receiveBufferSize = 65000;
 	static const int sendBufferSize = 1024;
+	static const int sameConnectionReuseSafetyTimeoutMillisec = 200; // safety period to elapse before next usage 
+											// of the same HLR connection 
 	int m_sockets[MAX_THREADS];
 	vector<thread> m_threads;
 	bool m_connected[MAX_THREADS];
 	atomic_bool m_busy[MAX_THREADS];
+	std::chrono::time_point<std::chrono::high_resolution_clock> m_lastReleaseTime[MAX_THREADS];
 	atomic_int m_lastUsed;
 	bool m_finished[MAX_THREADS];
 	condition_variable m_condVars[MAX_THREADS];

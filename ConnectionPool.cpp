@@ -3,11 +3,8 @@
 #include <chrono>
 #include <thread>
 #include <string>
-//#include <set>
 #include <Winsock2.h>
 #include <windows.h>
-//#innclude <boost/noncopyable.hpp>
-//#include <boost/bind.hpp>
 
 #include "ConfigContainer.h"
 #include "ConnectionPool.h"
@@ -17,8 +14,6 @@
 
 using namespace std;
 
-
-//using boost::asio::ip::tcp;
 extern LogWriter logWriter;
 
 ConnectionPool::ConnectionPool() :
@@ -594,6 +589,7 @@ void ConnectionPool::WorkerThread(unsigned int index)
 				m_results[index] = "Unknown exception";
 			}
 			m_finished[index] = true;
+			m_lastReleaseTime[index] = std::chrono::high_resolution_clock::now();
 			m_condVars[index].notify_one();
 		}
 	}
@@ -613,7 +609,9 @@ bool ConnectionPool::TryAcquire(unsigned int& index)
 		// to avoid suspending rarely used connections
 		for (int i = (firstCycle ? ((m_lastUsed + 1) %  m_config.m_numThreads) : 0); i < m_config.m_numThreads; ++i) {
 			bool oldValue = m_busy[i];
-			if (!oldValue) {
+			auto millisecElapsed =  std::chrono::duration_cast<std::chrono::milliseconds>(
+				std::chrono::high_resolution_clock::now() - m_lastReleaseTime[i]).count();
+			if (!oldValue && millisecElapsed > sameConnectionReuseSafetyTimeoutMillisec) {
 				if (m_busy[i].compare_exchange_weak(oldValue, true)) {
 					index = i;
 					m_finished[i] = false;
